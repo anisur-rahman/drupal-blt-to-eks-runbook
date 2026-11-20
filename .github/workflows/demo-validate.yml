@@ -1,0 +1,53 @@
+name: Demo – validate and build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "drupal-multisite-eks-demo/**"
+      - ".github/workflows/demo-validate.yml"
+  pull_request:
+    paths:
+      - "drupal-multisite-eks-demo/**"
+      - ".github/workflows/demo-validate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: drupal-multisite-eks-demo
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check PHP syntax
+        run: |
+          php -v
+          for f in web/sites/sites.php web/sites/site_a/settings.php web/sites/site_b/settings.php; do
+            php -l "$f"
+          done
+
+      - name: Check shell scripts
+        run: shellcheck scripts/*.sh docker/db-init/*.sh
+
+      - name: Validate Compose file
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build container
+        run: docker build -t drupal-multisite:ci .
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Helm lint and template
+        run: |
+          helm lint helm/drupal
+          helm template drupal helm/drupal -n drupal > "$RUNNER_TEMP/drupal.yaml"
+          echo "Rendered $(grep -c '^kind:' "$RUNNER_TEMP/drupal.yaml") Kubernetes resources"
