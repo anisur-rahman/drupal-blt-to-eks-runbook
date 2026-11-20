@@ -2,43 +2,34 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}
+  labels: {app: {{ .Release.Name }}}
 spec:
-  # No replicas here: HPA owns scaling.
+  # No replicas here: the HPA owns scaling.
   selector:
     matchLabels: {app: {{ .Release.Name }}}
   template:
     metadata:
       labels: {app: {{ .Release.Name }}}
     spec:
+      securityContext:
+        fsGroup: 33   # www-data in the php:apache image, so Drupal can write public files
       containers:
         - name: drupal
-          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          image: {{ include "drupal.image" . | quote }}
           ports: [{containerPort: 80}]
           env:
-            - name: APP_ENV
-              value: prod
-            - name: DB_HOST
-              value: {{ .Values.database.host | quote }}
-            - name: DB_USER
-              value: {{ .Values.database.user | quote }}
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.database.existingSecret }}
-                  key: password
-            {{- range .Values.sites }}
-            - name: {{ .id | upper }}_DB_NAME
-              value: {{ .dbName | quote }}
-            - name: {{ .id | upper }}_TRUSTED_HOSTS
-              value: {{ printf "^%s$" (.host | replace "." "\\.") | quote }}
-            {{- end }}
+            {{- include "drupal.env" . | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /user/login
               port: 80
               httpHeaders: [{name: Host, value: {{ (index .Values.sites 0).host | quote }}}]
-            initialDelaySeconds: 20
+            initialDelaySeconds: 10
             periodSeconds: 15
+          livenessProbe:
+            tcpSocket: {port: 80}
+            initialDelaySeconds: 30
+            periodSeconds: 20
           resources:
             requests: {cpu: 250m, memory: 512Mi}
             limits: {memory: 1Gi}

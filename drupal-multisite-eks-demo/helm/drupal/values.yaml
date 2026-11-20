@@ -1,8 +1,8 @@
 image:
   repository: example.invalid/drupal-multisite
-  # Use a real immutable digest before deployment
+  # Deploy by immutable digest. `tag` is only for local test clusters (kind).
   digest: sha256:REPLACE_WITH_VERIFIED_DIGEST
-replicaCountInitial: 2
+  tag: ""
 autoscaling:
   minReplicas: 2
   maxReplicas: 5
@@ -10,11 +10,22 @@ autoscaling:
 service:
   port: 80
 persistence:
+  # Must be ReadWriteMany (EFS) when pods run on more than one node.
   existingClaim: drupal-public-files
 database:
   host: REPLACE_RDS_ENDPOINT
   user: drupal
   existingSecret: drupal-db
+cron:
+  schedule: "*/15 * * * *"
+ingress:
+  enabled: false
+  className: alb
+  annotations: {}
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/certificate-arn: REPLACE_CERT_ARN
+# Keep in sync with web/sites/sites.php.
 sites:
   - id: site_a
     host: site-a.example.org

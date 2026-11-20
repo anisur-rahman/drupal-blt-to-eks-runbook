@@ -20,7 +20,7 @@
       "drupal/core-composer-scaffold": true,
       "drupal/core-project-message": true,
       "php-http/discovery": true,
-      "symfony/runtime": false,
+      "symfony/runtime": true,
       "tbachert/spi": false
     },
     "sort-packages": true

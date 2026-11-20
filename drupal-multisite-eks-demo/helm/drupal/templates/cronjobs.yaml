@@ -5,30 +5,33 @@ kind: CronJob
 metadata:
   name: {{ $.Release.Name }}-cron-{{ .id | replace "_" "-" }}
 spec:
-  schedule: "*/15 * * * *"
+  schedule: {{ $.Values.cron.schedule | quote }}
   concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      backoffLimit: 0
       template:
         spec:
-          restartPolicy: OnFailure
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 33
           containers:
             - name: cron
-              image: "{{ $.Values.image.repository }}@{{ $.Values.image.digest }}"
-              command: ["/bin/sh", "-c"]
-              args: ["vendor/bin/drush --uri=https://{{ .host }} cron"]
+              image: {{ include "drupal.image" $ | quote }}
+              command: ["vendor/bin/drush", "--uri=https://{{ .host }}", "cron"]
               env:
-                - name: DB_HOST
-                  value: {{ $.Values.database.host | quote }}
-                - name: DB_USER
-                  value: {{ $.Values.database.user | quote }}
-                - name: DB_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: {{ $.Values.database.existingSecret }}
-                      key: password
-                - name: {{ .id | upper }}_DB_NAME
-                  value: {{ .dbName | quote }}
-                - name: {{ .id | upper }}_TRUSTED_HOSTS
-                  value: {{ printf "^%s$" (.host | replace "." "\\.") | quote }}
+                {{- include "drupal.env" $ | nindent 16 }}
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {memory: 512Mi}
+              volumeMounts:
+                - name: public-files
+                  mountPath: /var/www/html/web/sites/{{ .id }}/files
+                  subPath: {{ .id }}
+          volumes:
+            - name: public-files
+              persistentVolumeClaim:
+                claimName: {{ $.Values.persistence.existingClaim }}
 {{- end }}

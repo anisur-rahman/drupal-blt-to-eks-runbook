@@ -1,0 +1,3 @@
+site,acquia_database,target_database,verified_on
+site_a,myappdb12345,site_a,2026-11-20
+site_b,myappdb67890,site_b_with_a_very_long_db_name,2026-11-20

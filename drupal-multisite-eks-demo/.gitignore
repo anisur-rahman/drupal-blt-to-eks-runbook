@@ -6,10 +6,13 @@ web/*
 !web/sites/
 web/sites/*
 !web/sites/sites.php
+!web/sites/default/
 !web/sites/site_a/
 !web/sites/site_b/
+web/sites/default/*
 web/sites/site_a/*
 web/sites/site_b/*
+!web/sites/default/settings.php
 !web/sites/site_a/settings.php
 !web/sites/site_b/settings.php
 local-files/

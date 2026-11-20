@@ -1,0 +1,3 @@
+site,acquia_db,target_db
+site_a,myappdb12345,site_a
+site_b,myappdb67890,site_b

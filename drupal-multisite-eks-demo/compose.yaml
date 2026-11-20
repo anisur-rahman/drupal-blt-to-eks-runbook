@@ -9,8 +9,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
       SITE_A_DB_NAME: site_a
       SITE_B_DB_NAME: site_b
-      SITE_A_TRUSTED_HOSTS: '^site-a\\.localhost$'
-      SITE_B_TRUSTED_HOSTS: '^site-b\\.localhost$'
+      SITE_A_TRUSTED_HOSTS: '^site-a\.localhost$'
+      SITE_B_TRUSTED_HOSTS: '^site-b\.localhost$'
     volumes:
       - ./local-files/site_a:/var/www/html/web/sites/site_a/files
       - ./local-files/site_b:/var/www/html/web/sites/site_b/files

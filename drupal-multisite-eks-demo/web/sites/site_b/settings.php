@@ -11,6 +11,7 @@ $databases['default']['default'] = [
 ];
 $settings['hash_salt'] = getenv('SITE_B_HASH_SALT') ?: 'local-demo-site-b-only';
 $settings['trusted_host_patterns'] = [getenv('SITE_B_TRUSTED_HOSTS') ?: '^site-b\\.localhost$'];
+$settings['config_sync_directory'] = '../config/site_b/sync';
 $settings['file_public_path'] = 'sites/site_b/files';
 $settings['file_private_path'] = '/tmp/site_b-private';
 $settings['update_free_access'] = FALSE;
