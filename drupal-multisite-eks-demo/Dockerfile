@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=composer-bin /usr/bin/composer /usr/local/bin/composer
 # Production PHP defaults: errors are logged, never printed into pages.
-RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    # Drupal's .htaccess sets zend.assertions to 0 per request; -1 (the php.ini-production
+    # value) can't be changed at runtime and logs a warning on every request.
+    && printf 'zend.assertions = 0\n' > "$PHP_INI_DIR/conf.d/zz-drupal.ini"
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
 RUN sed -ri 's!/var/www/html!/var/www/html/web!g' /etc/apache2/sites-available/*.conf /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 WORKDIR /var/www/html

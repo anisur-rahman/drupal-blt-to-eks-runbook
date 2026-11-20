@@ -65,11 +65,13 @@ step "Public files volume is writable by Drupal"
 # so fetching the page's CSS URL proves the web server user can write to the volume.
 for s in $SITES; do
   h=$(host "$s")
-  css=$(curl -s -H "Host: $h" http://127.0.0.1:18080/ | grep -o "/sites/$s/files/css/[^\"?]*\.css" | head -1)
-  [ -n "$css" ] || { echo "FAIL: no aggregated CSS link on $h"; exit 1; }
-  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $h" "http://127.0.0.1:18080$css")
-  echo "$h$css -> $code"; [ "$code" = 200 ] || { echo "FAIL: CSS not written for $s"; exit 1; }
-  kc exec deploy/drupal -- test -s "web$css" || { echo "FAIL: $css missing on the volume"; exit 1; }
+  # Keep the query string: Drupal needs it to build a file that doesn't exist yet.
+  url=$(curl -s -H "Host: $h" http://127.0.0.1:18080/ | grep -o "/sites/$s/files/css/[^\"]*" | head -1 | sed 's/&amp;/\&/g')
+  [ -n "$url" ] || { echo "FAIL: no aggregated CSS link on $h"; exit 1; }
+  file="web${url%%\?*}"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $h" "http://127.0.0.1:18080$url")
+  echo "$h ${url%%\?*} -> $code"; [ "$code" = 200 ] || { echo "FAIL: CSS not generated for $s"; exit 1; }
+  kc exec deploy/drupal -- test -s "$file" || { echo "FAIL: $file not written to the volume"; exit 1; }
 done
 
 step "Per-site CronJobs run"

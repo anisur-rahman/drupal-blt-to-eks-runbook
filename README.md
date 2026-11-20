@@ -25,7 +25,7 @@ All of this runs in the [CI workflow](.github/workflows/demo-validate.yml). Resu
 - **Helm chart on Kubernetes (kind):** the chart installs; both sites install and serve through the Service; the files volume is writable; each site's CronJob runs. The rendered manifests pass `kubeconform` schema validation.
 - **Migration inventory:** the `site-databases.csv` validator passes on valid input and rejects 9 kinds of bad input.
 
-Building and running the demo turned up nine defects that static checks had missed. One example: every page was a PHP fatal error returned with HTTP 200. All nine are listed in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md#defects-found-by-running-the-demo).
+Building and running the demo turned up ten defects that static checks had missed. One example: every page was a PHP fatal error returned with HTTP 200. All ten are listed in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md#defects-found-by-running-the-demo).
 
 ## The runbook's phases
 

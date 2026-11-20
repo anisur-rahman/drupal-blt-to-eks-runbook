@@ -59,5 +59,6 @@ The first version of this demo passed static checks (PHP syntax, Compose config,
 | 7 | Drupal created its config directory inside **public files** | `config_sync_directory` wasn't set | Set it to `../config/<site>/sync` |
 | 8 | Cron sometimes skipped a site ("already running") | `automated_cron` ran cron on page requests alongside scheduled cron | Uninstalled `automated_cron`; cron runs from a schedule (CronJob on Kubernetes) |
 | 9 | `web/sites/*.php` files were missing from the repository | `.gitignore` ignored `web/`, so the `!` re-include rules had no effect | Fixed the ignore patterns |
+| 10 | A PHP warning on every request (`zend.assertions`) | Drupal's `.htaccess` sets it to `0`, but the production `php.ini` value `-1` can't be changed at runtime | Set `zend.assertions = 0` in the image |
 
 Number 3 is why the smoke tests check page content and titles, not just status codes.
