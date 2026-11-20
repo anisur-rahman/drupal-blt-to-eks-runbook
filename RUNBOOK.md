@@ -1,37 +1,82 @@
-# Drupal Multisite: Acquia BLT → AWS EKS — Comparison & Full Command Runbook
+# Drupal Multisite Modernization: Acquia BLT → AWS EKS
 
-Nov 20, 2026 · Md Anisur Rahman
+Reference architecture and migration runbook · Revision 5 · Nov 20, 2026 · Md Anisur Rahman
 
-## Comparison: your EKS guide vs the generic process
+> **Status: reference design, not a completed migration.** The Acquia and AWS commands in this runbook have not been executed against a real Acquia environment or AWS account. The settings, container and Kubernetes patterns *have* been exercised in the companion [`drupal-multisite-eks-demo`](drupal-multisite-eks-demo/) project, whose CI builds the image, runs both sites under Docker Compose and deploys the Helm chart to a kind cluster. See [Validation status](#validation-status).
 
-Your guide is stronger on governance: acceptance criteria, landing zone, compliance, load testing and a realistic rollback. The generic process is stronger on the actual mechanics: settings refactor, Drush deploy, cron and the Acquia-only modules. This runbook merges both and keeps your 20-step numbering.
+**Labels used below**
 
-| Area                                                  | Your EKS guide                                              | Generic process                                                                            | Used in this runbook                                                         |
-|-------------------------------------------------------|-------------------------------------------------------------|--------------------------------------------------------------------------------------------|------------------------------------------------------------------------------|
-| Target platform                                       | AWS EKS, ECR, RDS, EFS/S3, Redis, ALB, CloudFront, WAF      | Platform-neutral (Kubernetes, ECS or VM)                                                   | EKS, as in your guide                                                        |
-| Docroot                                               | `web/`                                                      | `docroot/` (Acquia default)                                                                | `web/`; see the note in Conventions if yours is still `docroot/`             |
-| Inventory and acceptance criteria                     | Detailed (owners, SLOs, RPO/RTO, go/no-go)                  | Brief                                                                                      | Yours                                                                        |
-| BLT removal                                           | `composer remove --dev acquia/blt` only                     | Also removes the `blt.settings.php` require from each site and adds a settings replacement | Both. BLT is usually in `require`, not `require-dev`, so `--dev` can miss it |
-| Settings for containers                               | "Externalize via env/secrets" (no code)                     | Shared env-driven settings file per site                                                   | Full file given in Phase 8                                                   |
-| Acquia-only modules (connector, purge, search)        | Not mentioned                                               | Uninstall or replace before cutover                                                        | Added in Phase 8                                                             |
-| Reverse proxy, trusted hosts, hash salt behind an ALB | Not mentioned                                               | Covered                                                                                    | Added                                                                        |
-| Running Drupal updates                                | `updatedb`, `config:import`, `cache:rebuild` run separately | `drush deploy` per site                                                                    | `drush deploy`: same steps in the correct order, plus deploy hooks           |
-| Where updates run on EKS                              | Not specified                                               | Not specified                                                                              | A one-off Kubernetes Job per release, so updates don't run in every pod      |
-| Cron                                                  | "Verify scheduled tasks"                                    | Per-site cron loop                                                                         | A Kubernetes CronJob                                                         |
-| Backups                                               | `drush sql:dump` on the local copy                          | `sql:dump` against the Acquia alias                                                        | Acquia CLI backups + Drush against the remote alias, plus files              |
-| AWS provisioning                                      | Described; commands only for kubeconfig                     | Not covered                                                                                | Full CLI commands (eksctl, aws, helm)                                        |
-| Kubernetes manifests                                  | `kubectl apply -f k8s/` only                                | Not covered                                                                                | Full manifests                                                               |
-| CI/CD                                                 | Described; docker tag/push only                             | GitHub Actions example                                                                     | GitHub Actions with OIDC to ECR and EKS                                      |
-| Load, accessibility and security testing              | Covered                                                     | Not covered                                                                                | Yours, with commands                                                         |
-| Rollback                                              | Notes that a Kubernetes rollback can't undo schema updates  | DNS rollback window                                                                        | Both                                                                         |
-| Drupal 11 upgrade (Drupal 10 support ends 9 Dec 2026) | Not mentioned                                               | Covered                                                                                    | Added at the end                                                             |
+- **Validated in the demo:** the pattern runs in [`drupal-multisite-eks-demo`](drupal-multisite-eks-demo/) CI (local Docker and kind, not AWS).
+- **Environment-dependent (Acquia / AWS):** needs a real Acquia environment or AWS account; not executed. Validate in non-production first.
 
-**Fixes to your guide's commands:**
+## Executive summary
 
-- Step 3 dumps the *local* database. Run the dump against the Acquia alias (`drush @prod.site_a sql:dump`) or use `acli` backups, and copy the files too.
-- Step 7: `composer remove --dev acquia/blt` does nothing if BLT is in `require`. Check first with `composer show -D | grep blt`.
-- Step 17 omits `deploy:hook`. `drush deploy` covers it.
-- Step 1 uses `find web/sites` while Acquia projects start with `docroot/`. Confirm which one you have.
+A Drupal multisite estate on Acquia Cloud depends on Acquia BLT for builds, settings, deployments and scheduled tasks. This runbook removes that dependency and moves the sites to Amazon EKS in 20 phases, without changing the content model or the one-codebase, many-sites structure.
+
+The approach is to replace each BLT and Acquia function with a standard, tested equivalent *before* removing it: Composer and Drush instead of BLT commands, environment-driven settings instead of BLT's settings include, a Kubernetes Job per site instead of Cloud Hooks, and CronJobs instead of Acquia scheduled jobs. Data moves through rehearsed migrations with proven restores, and cutover is a DNS switch with a defined rollback window. With BLT gone, the sites can move to Drupal 11 before Drupal 10 support ends on 9 December 2026.
+
+## Objectives
+
+1. **Remove BLT without losing anything it did.** Every BLT command, hook and settings include is mapped to a replacement and tested before the package is removed.
+2. **Isolate sites while sharing code.** One image serves every site; each site keeps its own database, database user, hash salt, files and secrets.
+3. **Run on a resilient platform.** Multi-AZ EKS, RDS and EFS; autoscaling; immutable images; no long-lived CI credentials.
+4. **Migrate safely.** Proven restores, timed rehearsals, an explicit go/no-go, and a rollback plan that accounts for database schema changes.
+5. **Unblock Drupal 11.**
+
+## Scope and assumptions
+
+- **Source:** Acquia Cloud Platform, one Composer codebase, one database per site, Acquia BLT, Drush 12 or 13, Composer 2.7 or later. Acquia Site Factory specifics are out of scope.
+- **Target:** one AWS account and region, one EKS cluster with `drupal` (production) and `drupal-staging` namespaces. Multi-region disaster recovery is out of scope.
+- **Unchanged:** content model, themes and custom modules, apart from removing Acquia-only modules.
+- **Infrastructure:** shown as AWS CLI, eksctl and Helm commands so every step is visible. Production should express the same resources in reviewed Terraform.
+- **Example values only:** AWS account `123456789012`, domains under `example.org`, GitHub organization `myorg`, sites `site_a` and `site_b`. Replace them with your own.
+
+## Target architecture
+
+```
+Users ─▶ Route 53 ─▶ CloudFront + WAF (optional) ─▶ ALB (public subnets, ACM TLS)
+                                                      │  Ingress host rules: one rule per site
+                                                      ▼
+        EKS pods in private subnets: nginx :8080 ─▶ PHP-FPM :9000 (same image code, one pod)
+          │           │                   │                      │
+          ▼           ▼                   ▼                      ▼
+   RDS MySQL 8.0   ElastiCache Redis   EFS public/<site>     Secrets Manager ─▶ External Secrets
+   Multi-AZ,       cache, prefix       and private/<site>    ─▶ Kubernetes Secret (per-site DB
+   DB + user       per site                                    user, password, hash salt)
+   per site
+
+GitHub Actions ─(OIDC)─▶ ECR (immutable tags, scan on push) ─▶ rollout ─▶ drush deploy Job per site
+Kubernetes CronJob per site ─▶ drush cron
+```
+
+## Key design decisions
+
+| Decision | Choice | Why | Alternative considered |
+|---|---|---|---|
+| Compute | EKS | Native Jobs and CronJobs for Drupal tasks, Helm-driven site inventory, portable manifests | ECS: less to operate and cheaper, but Jobs and CronJobs need extra services |
+| BLT removal | Remove the settings include first, then `composer remove acquia/blt --minimal-changes` | Sites keep bootstrapping; no unplanned dependency upgrades | `composer remove --dev` only: misses BLT when it is in `require` |
+| Site settings | Keep each site's `settings.php`; append an include of an environment-driven `settings.shared.php` | Preserves site-specific overrides | Overwriting `settings.php`: loses overrides |
+| Hostname routing | Drupal `sites.php`, one Service; unknown hosts get 404 | Adding a site is a data change, not new infrastructure | One Deployment per site: more isolation, much higher cost |
+| Database updates | `drush deploy` in a one-off Kubernetes Job per site, run in sequence after rollout | Updates never run in every pod; a failure stops the release | Running updates on container start: races between pods |
+| Cron | One Kubernetes CronJob per site; `automated_cron` uninstalled | Predictable schedule, no work on page requests | `automated_cron`: runs on visitor requests |
+| Files | EFS with an access point per volume, mounted per site | POSIX semantics like Acquia; no module changes | S3 via `s3fs`: later, after testing image styles and private files |
+| Secrets | Secrets Manager synced by External Secrets Operator | No secrets in Git or images; rotation in one place | Kubernetes Secrets applied by CI |
+| CI credentials | GitHub OIDC role scoped to the repository and namespaces | No long-lived AWS keys | IAM user access keys |
+| Image references | Immutable digests in Helm values | What was tested is what runs | Mutable tags |
+| Reverse proxy | Trust only the addresses that actually connect to Drupal, verified per topology | Correct client IPs without allowing spoofed headers | Trusting `REMOTE_ADDR` or the whole VPC |
+| Backups | Acquia backups plus Drush dumps and file copies from the remote alias, with a proven restore | Portable copies that are known to restore | Local database dumps |
+| Drupal 11 | Upgrade after cutover stabilizes | One major change at a time | Upgrade during migration |
+
+## Key risks
+
+| Risk | Mitigation |
+|---|---|
+| A schema update cannot be undone by rolling back code | RDS snapshot before every production deploy; rollback restores code, database and files together (see [Rollback](#rollback)) |
+| Content written on EKS after cutover is lost by a DNS rollback | Content freeze during cutover; agreed fix-forward cutoff (for example 24 hours) |
+| Wrong client IPs or spoofable `X-Forwarded-For` | Proxy settings verified with the tests in [Phase 8](#verify-the-reverse-proxy-configuration) before go-live |
+| Site-to-database mapping assumed, not verified | `site-databases.csv` validated by script and checked against Acquia CLI output (Phase 3) |
+| EFS latency for large file trees or image styles | Load test in Phase 18; S3 for public files as a follow-up |
+| Hidden Acquia dependencies (modules, hooks, integrations) | Inventory in Phase 1; each one replaced and tested in Phases 5–8 |
 
 ## Conventions and prerequisites
 
@@ -68,13 +113,9 @@ Every command below assumes the variables in this file. Source it in each shell 
     forsites() { for s in $SITES; do echo "== $s"; vendor/bin/drush -l "$s" "$@" || return 1; done; }
     # usage: forsites status
 
-**REVIEWED IMPLEMENTATION NOTE — Execution status**
-
-REFERENCE RUNBOOK / PROPOSED IMPLEMENTATION — commands are examples requiring environment-specific validation. No live Acquia migration, AWS provisioning, restore, benchmark or production cutover is asserted. Use a non-production clone first. Record evidence, approvals, and rollback checkpoints before each destructive step.
-
-**Revision 4 corrections:** the BLT settings include is now removed before `composer remove`; BLT is removed with `--minimal-changes`; `TRUSTED_PROXY_IPS` is set to the ALB public subnet CIDRs in the ConfigMap; local file restores use `local-files/`; Phase 14 database and user names come from `site-databases.csv`; `patches/` is guaranteed to exist; the Phase 8 loop no longer calls `exit`; and the first apply scales to the HPA minimum.
-
 ## Phases 1–4: Inventory, baseline, backup, acceptance
+
+> **Environment-dependent (Acquia).** Not executed against a real Acquia environment. Run against a non-production Acquia environment first, and confirm each command's output before relying on it.
 
 ### 1. Inventory sites and BLT usage
 
@@ -121,14 +162,26 @@ REFERENCE RUNBOOK / PROPOSED IMPLEMENTATION — commands are examples requiring 
 
 ### 3. Back up and prove a restore
 
+**Site-to-database mapping.** Acquia database names often differ from site directory names, so the mapping is recorded once in `migration/inventory/site-databases.csv` and used by every later step (backups here, secrets in Phase 14, imports in Phase 17). Fill in `verified_on` only after checking the row against Acquia CLI output and the site's `settings.php`:
+
+    site,acquia_database,target_database,verified_on
+    site_a,myappdb12345,site_a,2026-11-20
+    site_b,myappdb67890,site_b,2026-11-20
+
+[`scripts/validate-site-databases.sh`](drupal-multisite-eks-demo/scripts/validate-site-databases.sh) (in the demo, with [tests](drupal-multisite-eks-demo/tests/site-databases/)) fails unless every site in `$SITES` has exactly one row, no Acquia or target database is mapped twice, every row is verified, every name is a valid MySQL identifier, every `<target>_user` fits MySQL's 32-character limit, and, with `--acquia-dbs`, every Acquia database actually exists. **Validated in the demo.**
+
     # Preserve a separate full archival backup. The optimized migration dump below intentionally omits configured disposable tables (e.g. cache/search), but verify table lists and session/history requirements before use.
     mkdir -p backups/$(date +%F)
     # Acquia-managed backups (one DB per site)
-    acli api:environments:database-list $ACQUIA_APP.$ACQUIA_ENV
-    # Record verified site-to-Acquia-database mapping in migration/inventory/site-databases.csv.
-    # Example columns: site,acquia_database,target_database; do not assume names match.
-    # Validate mapping against Acquia CLI output before initiating backups.
-    while IFS=, read -r site acquia_db target_db; do
+    # acli api:* commands print JSON; keep just the database names for the validator
+    acli api:environments:database-list $ACQUIA_APP.$ACQUIA_ENV | jq -r '.[].name' \
+      > migration/inventory/acquia-databases.txt
+
+    # Validate the mapping before any backup: exits non-zero on any problem
+    scripts/validate-site-databases.sh --sites "$SITES" \
+      --acquia-dbs migration/inventory/acquia-databases.txt migration/inventory/site-databases.csv
+
+    while IFS=, read -r site acquia_db target_db verified_on; do
       [ "$site" = site ] && continue
       acli api:environments:database-backup-create "$ACQUIA_APP.$ACQUIA_ENV" "$acquia_db"
     done < migration/inventory/site-databases.csv
@@ -143,8 +196,10 @@ REFERENCE RUNBOOK / PROPOSED IMPLEMENTATION — commands are examples requiring 
     sha256sum backups/$(date +%F)/*.sql.gz > backups/$(date +%F)/SHA256SUMS
 
     # Restore test into an isolated DB
-    docker run -d --name restoretest -e MARIADB_ROOT_PASSWORD=root -p 3307:3306 mariadb:10.11
-    sleep 20 && mysql -h127.0.0.1 -P3307 -uroot -proot -e "CREATE DATABASE site_a"
+    # Same engine and major version as the target (RDS MySQL 8.0)
+    docker run -d --name restoretest -e MYSQL_ROOT_PASSWORD=root -p 3307:3306 mysql:8.0
+    until mysql -h127.0.0.1 -P3307 -uroot -proot -e 'SELECT 1' >/dev/null 2>&1; do sleep 2; done
+    mysql -h127.0.0.1 -P3307 -uroot -proot -e "CREATE DATABASE site_a"
     gunzip -c backups/$(date +%F)/site_a.sql.gz | mysql -h127.0.0.1 -P3307 -uroot -proot site_a
     mysql -h127.0.0.1 -P3307 -uroot -proot site_a -e "SELECT COUNT(*) FROM node_field_data"
     docker rm -f restoretest
@@ -158,6 +213,8 @@ No commands here. Write a `migration/ACCEPTANCE.md` with each hostname and its o
 For migration backups, do not use a structure-only table exclusion unless explicitly approved and verified. Inventory actual Acquia database names rather than assuming they match site directory names. Capture complete DB, public/private files and configuration; encrypt backups, restrict access, checksum, and perform a full isolated restore including functional verification. Avoid putting production data or secrets in Git.
 
 ## Phases 5–8: Remove BLT and refactor settings
+
+> **Partly validated in the demo.** The settings pattern (environment-driven settings per site, `sites.php` routing, unknown hosts refused) runs in [`drupal-multisite-eks-demo`](drupal-multisite-eks-demo/). The BLT removal steps need your real codebase.
 
 ### 5. Map BLT tasks to replacements
 
@@ -242,7 +299,7 @@ For migration backups, do not use a structure-only table exclusion unless explic
       foreach ($hosts as $h) { $sites[$h] = $dir; }
     }
 
-Each site's `settings.php` becomes three lines:
+Keep each site's existing `settings.php`. Add the shared settings to it through a reviewed patch, never by overwriting the file:
 
     # Do NOT overwrite site settings.php. Preserve site-specific overrides.
     # Create settings.shared.php separately and add the include to each existing
@@ -280,10 +337,10 @@ Each site's `settings.php` becomes three lines:
     $settings['trusted_host_patterns'] = array_filter(explode(',', getenv("{$p}_TRUSTED_HOSTS") ?: ''));
     $settings['update_free_access'] = FALSE;
 
-    // Behind ALB / CloudFront
+    // Behind the ALB (and CloudFront, if used). TRUSTED_PROXY_IPS lists every address that
+    // can appear as a hop Drupal should skip; see "Verify the reverse-proxy configuration".
+    // Never trust REMOTE_ADDR dynamically or the whole VPC.
     $settings['reverse_proxy'] = TRUE;
-    // TRUSTED_PROXY_IPS = the ALB's public subnet CIDRs (set in the drupal-config ConfigMap).
-    // ALB node IPs change, so subnets are trusted, not single IPs; never REMOTE_ADDR or the whole VPC.
     $settings['reverse_proxy_addresses'] = array_filter(array_map('trim', explode(',', getenv('TRUSTED_PROXY_IPS') ?: '')));
     if (!$settings['reverse_proxy_addresses']) { $settings['reverse_proxy'] = FALSE; }
     $settings['reverse_proxy_trusted_headers'] = \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_FOR
@@ -305,21 +362,51 @@ Each site's `settings.php` becomes three lines:
 
     if (file_exists(__DIR__ . "/settings.{$env}.php")) { include __DIR__ . "/settings.{$env}.php"; }
 
+#### Verify the reverse-proxy configuration
+
+Drupal takes the client IP from `X-Forwarded-For` only when the request comes from an address in `reverse_proxy_addresses`, and then uses the right-most address it does not trust. So the list must contain exactly the addresses that can sit between the client and Drupal:
+
+| Topology | What PHP sees as `REMOTE_ADDR` | `TRUSTED_PROXY_IPS` |
+|---|---|---|
+| ALB → pod (`target-type: ip`), nginx without `real_ip` | The ALB node's private IP, inside the ALB's subnets | The CIDRs of the subnets the ALB is placed in |
+| CloudFront → ALB → pod | Same as above | ALB subnet CIDRs **plus** the CloudFront origin-facing ranges (`CLOUDFRONT_ORIGIN_FACING` in AWS `ip-ranges.json`), or read the `CloudFront-Viewer-Address` header instead. Also restrict the ALB security group to the CloudFront managed prefix list so nobody can bypass CloudFront and forge the header |
+| nginx with `real_ip` enabled | Already the client IP | Leave empty: Drupal must not process the header a second time |
+
+The ALB subnet CIDRs are an assumption until the tests below pass in staging, because internal load balancers, additional proxies and service meshes change the path. Run them from a machine whose public IP you know:
+
+    MYIP=$(curl -s https://checkip.amazonaws.com)
+    H=site-a.stg.example.org
+    # 1. Client IP: a 404 is logged with the client address Drupal derived
+    curl -s -o /dev/null "https://$H/proxy-check-$$"
+    kubectl -n drupal-staging exec deploy/drupal -c app -- \
+      drush -l site_a watchdog:show --type=page_not_found --count=1 --extended | grep -E "Hostname|proxy-check"
+    #    Hostname must equal $MYIP, not an ALB or CloudFront address
+    # 2. Spoofing: a forged header must not change the logged address
+    curl -s -o /dev/null -H "X-Forwarded-For: 203.0.113.9" "https://$H/proxy-spoof-$$"
+    #    Hostname must still equal $MYIP, not 203.0.113.9
+    # 3. HTTPS detection: Drupal must build https:// URLs behind the TLS-terminating ALB
+    curl -s "https://$H/" | grep -o '<link rel="canonical" href="[^"]*"'   # must start with https://
+
+Record the three results in the evidence log. If test 1 shows an ALB address, a hop is missing from `TRUSTED_PROXY_IPS`; if test 2 shows `203.0.113.9`, the list trusts too much.
+
 Replace Acquia-only modules. `acquia_purge` is still needed while traffic is on Acquia, so disable it through a config split that is only active on Acquia, or uninstall at cutover.
 
     composer require drupal/redis drupal/purge drupal/cloudfront_purger drupal/search_api_solr drupal/s3fs
     for s in $SITES; do
       vendor/bin/drush -l $s pm:enable redis purge purge_processor_cron purge_queuer_coretags -y
       vendor/bin/drush -l $s pm:uninstall acquia_connector acquia_search memcache -y 2>/dev/null
+      vendor/bin/drush -l $s pm:uninstall automated_cron -y 2>/dev/null   # cron runs from a CronJob (Phase 15)
       vendor/bin/drush -l $s config:export -y
     done
     git add -A && git commit -m "Remove Acquia BLT; env-driven multisite settings"
 
 **REVIEWED IMPLEMENTATION NOTE — Safe BLT and settings refactor**
 
-Do not run the blanket settings.php overwrite shown below against an existing site. Preserve each existing site settings.php, review BLT include dependencies and custom environment settings, and introduce settings.shared.php via a reviewed patch. Remove BLT only from the Composer section where installed; avoid broad composer update -W unless dependency resolution requires it. Keep existing deploy hooks until their replacements are tested. Never uninstall Acquia modules before dependency and cutover checks.
+Preserve each existing site settings.php, review BLT include dependencies and custom environment settings, and introduce settings.shared.php via a reviewed patch. Remove BLT only from the Composer section where installed; avoid broad composer update -W unless dependency resolution requires it. Keep existing deploy hooks until their replacements are tested. Never uninstall Acquia modules before dependency and cutover checks.
 
 ## Phases 9–11: Build, run locally, test
+
+> **Partly validated in the demo.** The demo builds a simpler single-container image (Apache + PHP) and runs both sites under Docker Compose in CI. The two-image nginx + PHP-FPM build below is the production design and has not been built.
 
 ### 9. Production container
 
@@ -361,6 +448,9 @@ One Dockerfile produces two images: `app` (PHP-FPM with code) and `web` (Nginx w
     FROM nginxinc/nginx-unprivileged:1.27-alpine AS web
     COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
     COPY --from=app /var/www/html/web /var/www/html/web
+
+The Dockerfile copies these supporting files. Create them from a terminal in the repository root (this is shell, not part of the Dockerfile):
+
     mkdir -p docker/php docker/nginx patches && touch patches/.gitkeep
     cat > docker/php/drupal.ini <<'EOF'
     memory_limit=512M
@@ -404,6 +494,8 @@ One Dockerfile produces two images: `app` (PHP-FPM with code) and `web` (Nginx w
     *.sql*
     .env*
     EOF
+
+Build both targets and check them:
 
     docker build --target app -t $ECR_REPO:app-dev .
     docker build --target web -t $ECR_REPO:web-dev .
@@ -491,7 +583,9 @@ Treat the Dockerfile and Compose snippets as templates, not copy/paste-ready fil
 
 ## Phases 12–14: AWS landing zone, EKS and supporting services
 
-These are the CLI commands so every step is visible. For production, put the same resources in Terraform (`terraform-aws-modules/eks`, `/rds`, `/vpc`) and run `terraform plan` / `apply` through review, as your guide recommends.
+> **Environment-dependent (AWS).** Not executed against a real AWS account. Run in a non-production account first; resource creation alone does not prove a working installation.
+
+These are the CLI commands so every step is visible. For production, put the same resources in Terraform (`terraform-aws-modules/eks`, `/rds`, `/vpc`) and run `terraform plan` / `apply` through review, as the scope assumes.
 
 ### 12. Landing zone: cluster and VPC
 
@@ -524,6 +618,9 @@ eksctl creates the VPC (public subnets for the ALB, private subnets for nodes) a
         volumeEncrypted: true
     cloudWatch:
       clusterLogging: { enableTypes: ["api", "audit", "authenticator"] }
+
+Set a cost guardrail, then create the cluster:
+
     aws budgets create-budget --account-id $AWS_ACCOUNT_ID \
       --budget '{"BudgetName":"drupal-eks","BudgetLimit":{"Amount":"2000","Unit":"USD"},"TimeUnit":"MONTHLY","BudgetType":"COST"}'
 
@@ -626,7 +723,7 @@ UID/GID 82 is `www-data` in Alpine images.
 **Secrets Manager:** one secret per site, plus shared values.
 
     # target_db comes from the same mapping file used for the Acquia backups (Phase 3)
-    while IFS=, read -r s acquia_db target_db; do
+    while IFS=, read -r s acquia_db target_db verified_on; do
       [ "$s" = site ] && continue
       aws secretsmanager create-secret --name drupal/prod/$s --secret-string "$(jq -n \
         --arg db "$target_db" --arg u "${target_db}_user" --arg p "$(openssl rand -base64 24)" \
@@ -677,6 +774,8 @@ The table assumes each target_db equals the site name; use the values from site-
 EFS is used for files because it behaves like the POSIX storage on Acquia. Move public files to S3 with `s3fs` later only after testing image styles, aggregation and private-file access.
 
 ## Phase 15: Kubernetes workload
+
+> **Partly validated in the demo.** The demo's Helm chart (Deployment, Service, HPA, per-site CronJobs, optional Ingress) is installed on a kind cluster in CI, where both sites install, serve pages and run cron. The EKS-specific parts below (ALB, EFS, External Secrets, IAM) are environment-dependent (AWS).
 
 All manifests go in `k8s/`. Hostname routing is done by Drupal's `sites.php`, so every host points at the same Service. The examples show two sites; repeat the per-site lines for each one.
 
@@ -826,7 +925,7 @@ The `web` image is built on `nginx-unprivileged`, so it runs as UID 101 on port 
                 - name: cron
                   image: ACCOUNT.dkr.ecr.REGION.amazonaws.com/drupal-multisite:app-TAG
                   envFrom: [ { secretRef: { name: drupal-env } }, { configMapRef: { name: drupal-config } } ]
-                  command: ["bash", "-c", "for s in site_a site_b; do drush -l $s cron || echo \"cron failed: $s\"; done"]
+                  command: ["bash", "-c", "rc=0; for s in site_a site_b; do drush -l $s cron || { echo \"cron failed: $s\"; rc=1; }; done; exit $rc"]
                   volumeMounts:
                     - { name: files, mountPath: /var/www/html/web/sites/site_a/files, subPath: public/site_a }
                     - { name: files, mountPath: /var/www/html/web/sites/site_b/files, subPath: public/site_b }
@@ -875,8 +974,7 @@ The `web` image is built on `nginx-unprivileged`, so it runs as UID 101 on port 
     kubectl -n $NS scale deployment/drupal --replicas=3
     kubectl -n $NS rollout status deployment/drupal
     kubectl -n $NS get pods -o wide
-    # Proxy check: the client IP in logs should be yours, not an ALB address
-    kubectl -n $NS exec deploy/drupal -c app -- drush -l site_a watchdog:show --count=5
+    # Proxy check: run the three tests in Phase 8, "Verify the reverse-proxy configuration"
     kubectl -n $NS get ingress drupal                     # ADDRESS = ALB DNS name
     export ALB=$(kubectl -n $NS get ingress drupal -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
@@ -889,6 +987,8 @@ The `web` image is built on `nginx-unprivileged`, so it runs as UID 101 on port 
       --configuration-values '{"enableNetworkPolicy":"true"}'
 
 ## Phase 16: CI/CD pipeline
+
+> **Environment-dependent (AWS).** Not executed against a real AWS account. Run in a non-production account first; resource creation alone does not prove a working installation.
 
 Pull requests run checks only. A merge to `main` builds both images once, deploys them to staging, then waits for approval before production. GitHub reaches AWS through OIDC, so no long-lived keys are stored.
 
@@ -995,9 +1095,11 @@ For staging, apply the Phase 15 manifests to a `drupal-staging` namespace with i
 
 ### Deploy script
 
-    # REFERENCE ONLY: replace sed render() and hardcoded SITES with Helm templates driven by values.yaml; deploy images by immutable digest. Preserve sequential per-site Jobs and stop on failure.
     #!/usr/bin/env bash
     # scripts/deploy.sh <namespace> <tag>
+    # REFERENCE ONLY: replace sed render() and hardcoded SITES with Helm templates driven by
+    # values.yaml, and deploy images by immutable digest. Keep the sequential per-site Jobs
+    # and the stop-on-failure behaviour.
     set -euo pipefail
     NS=$1; TAG=$2
     SITES="site_a site_b"
@@ -1029,6 +1131,9 @@ For staging, apply the Phase 15 manifests to a `drupal-staging` namespace with i
       code=$(curl -s -o /dev/null -w "%{http_code}" https://$h.$BASE_DOMAIN/)
       echo "$h.$BASE_DOMAIN -> $code"; [ "$code" = 200 ] || exit 1
     done
+
+Commit the pipeline from a terminal:
+
     chmod +x scripts/deploy.sh
     git add .github scripts k8s Dockerfile docker compose.yaml .dockerignore
     git commit -m "Container build, EKS manifests and CI/CD"
@@ -1042,6 +1147,8 @@ Job names must be valid DNS labels, so the script swaps underscores for hyphens 
 Provision EKS, RDS, networking, EFS, IAM, Secrets Manager and ingress through reviewed infrastructure-as-code for production. Validate EKS version support, cluster access, least-privilege pod identity, security-group sources, encrypted storage, image digest pinning, TLS, network policies, autoscaling and backup restoration. Do not infer a working installation from successful resource creation alone.
 
 ## Phases 17–18: Migrate data, rehearse, validate
+
+> **Environment-dependent (Acquia and AWS).** Not executed. Time every rehearsal; the timings set the cutover window.
 
 ### 17. Migrate data into staging (repeat for each rehearsal)
 
@@ -1140,6 +1247,8 @@ Record the results against `migration/ACCEPTANCE.md` from Phase 4 before schedul
 Use a single per-release Drupal deployment Job and per-site cron with locking. Verify all site hostnames, file writes, integrations, accessibility, load benchmarks, logs and alerts. Establish content freeze or dual-write reconciliation before cutover. DNS or kubectl rollback alone cannot reverse Drupal database schema changes or recover writes; restore a compatible code/database/files/config checkpoint and reconcile post-cutover changes.
 
 ## Phases 19–20: Cutover, rollback, decommission
+
+> **Environment-dependent (Acquia and AWS).** Not executed. Rehearse the full sequence, including rollback, before the real cutover.
 
 ### 19. Prepare (2–7 days before)
 
@@ -1247,44 +1356,36 @@ With BLT gone, nothing blocks Drupal 11. Acquia lists Drupal 10 end of life as 9
 | Run cron now                    | `kubectl -n drupal create job cron-now --from=cronjob/drupal-cron`                                                                                                                                              |
 | Add a site                      | Add `sites.php` entry, `sites/<new>/settings.php`, `config/<new>/sync`, Secrets Manager secret, ExternalSecret keys, Ingress host, volume mounts, ACM SAN; then `drush -l <new> site:install --existing-config` |
 
-**Architect Review Addendum — Required Validation Before Production Use**
+## Production readiness gates
 
-This addendum documents review findings and acceptance gates. It supplements, rather than certifies, the 20-step example commands above.
+These gates must be met, with evidence, before any production use. They supplement the phase steps; they do not certify them.
 
-**1. Settings and reverse proxy**
+1. **Settings and reverse proxy:** site-specific settings, trusted host patterns, config sync paths, hash salts and private-file paths preserved; the three proxy tests in Phase 8 pass for the real topology.
+2. **Composer and BLT:** every BLT recipe, hook, settings include, patch and CI script replaced and tested before removal; `composer validate`, `composer audit`, per-site Drush bootstrap and tests pass; lock file changes reviewed.
+3. **Database and storage:** complete dumps, a validated `site-databases.csv`, per-site credentials, encrypted backups, and a timed isolated restore including functional checks. File writes, image styles, ownership and EFS performance tested.
+4. **Containers:** no secrets in images, pinned base images, both build targets built and scanned, no host mounts that hide image-baked settings, unique local-only credentials.
+5. **EKS and CI/CD:** manifests schema-validated and deployed to non-production; image digests pinned; production approval gate; short-lived OIDC credentials; least-privilege roles; EFS CSI, ALB controller and External Secrets verified.
+6. **Integrations:** inventory of REST/JSON:API, GraphQL, SSO, search, webhooks, scheduled imports and outbound mail, each with authentication, rate limits, retries, owner and a cutover test.
+7. **Performance:** baseline and target p50/p95/p99 latency, throughput, error rate, CPU, memory, database load and autoscaling behaviour recorded; unmeasured figures labelled as targets.
+8. **Governance:** controls mapped to the client's actual requirements (for example Section 508/WCAG and agency security baselines), RACI, change approvals, risk register, migration waves, go/no-go criteria and owner sign-off.
 
-Retain site-specific settings, trusted host rules, config sync paths, hash salts and private-file paths. Do not dynamically trust every REMOTE_ADDR as a proxy. Restrict direct origin traffic and use only known proxy ranges or addresses; validate forwarded headers with actual ALB/CloudFront topology.
+## Validation status
 
-**2. Composer and Acquia BLT**
+| Area | Status | Evidence |
+|---|---|---|
+| Env-driven multisite settings, `sites.php` routing, unknown hosts refused | Validated in the demo (Docker Compose, kind) | [Demo CI](drupal-multisite-eks-demo/README.md#continuous-integration), [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md) |
+| One database per site, isolation between sites | Validated in the demo | Compose and kind smoke tests |
+| Per-site cron as Kubernetes CronJobs | Validated in the demo (kind) | kind smoke test |
+| Helm chart renders valid Kubernetes resources | Validated in the demo | `helm lint` and `kubeconform` in CI |
+| `site-databases.csv` validation | Validated in the demo | Validator test suite in CI |
+| BLT removal (Phases 5–7) | Not executed | Needs the real codebase |
+| Acquia backups, remote Drush, cutover (Phases 1–4, 17, 19–20) | Not executed | Needs a real Acquia environment |
+| AWS landing zone, EKS, RDS, EFS, ALB, External Secrets, OIDC (Phases 12–16) | Not executed | Needs an AWS account |
+| Two-image nginx + PHP-FPM build (Phase 9) | Not built | — |
+| Reverse-proxy tests (Phase 8) | Not executed | Needs the real ALB / CloudFront path |
+| Load, accessibility and restore tests (Phase 18) | Not executed | — |
 
-Inspect composer.json and composer.lock, BLT recipes, hooks, settings includes, patches, CI scripts and Acquia-only modules. Replace each function before removing the BLT package. Run composer validate, composer audit, per-site Drush bootstrap, tests, and a lockfile review after the minimal necessary dependency change.
+## Revision history
 
-**3. Database and storage**
-
-Use complete database dumps and a documented site-to-database mapping. Test public/private files, image styles, upload writes, ownership and EFS performance. Use per-site credentials where feasible. Encrypt backups and rehearse point-in-time restore and site-level rollback.
-
-**4. Containers and local development**
-
-Separate build-time and runtime assets, avoid copying secrets into images, pin supported base images, and validate Dockerfile syntax with actual builds. Avoid host mounts that replace built settings unexpectedly. Use unique local-only credentials and restricted host patterns.
-
-**5. EKS and CI/CD**
-
-Validate Kubernetes YAML with schema tools and a real non-production deployment. Pin image digests, require approval for production, use short-lived GitHub OIDC credentials, configure least-privilege AWS roles, and verify EFS CSI/ALB controllers and Secrets Manager integration.
-
-**6. Interfaces and data synchronization**
-
-Add an inventory of REST/JSON:API, GraphQL, SSO, external search, webhooks, scheduled imports, outbound notifications and third-party endpoints. For each integration record authentication, rate limits, mapping, retries, idempotency, ownership, and cutover testing.
-
-**7. Architecture decisions and performance**
-
-Write ADRs for EKS versus ECS, EFS versus S3, multisite tenancy boundaries, Redis cache, and database isolation. Record baseline and target p50/p95/p99 latency, throughput, error rate, CPU, memory, DB load and autoscaling, and label unmeasured targets as targets.
-
-**8. Compliance and executive communication**
-
-Map controls to actual client requirements (for example Section 508/WCAG and applicable agency security baselines). Add an executive one-page summary, RACI, change approvals, risk register, migration waves, go/no-go criteria, and post-cutover owner sign-off.
-
-**9. Evidence checklist**
-
-Attach sanitized GitHub repository, successful build/test logs, redacted infrastructure plan, screenshots of multisite routing, backup-restore test, load test report, vulnerability scan, deployment Job results, rollback rehearsal, and approved release checklist. Mark incomplete evidence as pending.
-
-Portfolio description: Proposed Drupal Multisite Acquia BLT-to-AWS EKS Reference Architecture and Migration Runbook. Do not describe it as a completed production migration without deployment evidence.
+- **Revision 5 (20 Nov 2026):** replaced the comparison preface with an executive summary, objectives, scope, target architecture, design decisions and risks; labelled environment-dependent phases; added a validated `site-databases.csv` format and validator; removed the contradictory "three lines" instruction in Phase 8; separated shell commands from the Dockerfile (Phase 9), `cluster.yaml` (Phase 12) and the deploy script (Phase 16); replaced the reverse-proxy assumption with a topology table and verification tests; the cron Job now fails when any site's cron fails; `automated_cron` is uninstalled; the restore test uses MySQL 8.0 to match RDS; added a validation status table.
+- **Revision 4:** the BLT settings include is now removed before `composer remove`; BLT is removed with `--minimal-changes`; `TRUSTED_PROXY_IPS` is set to the ALB public subnet CIDRs in the ConfigMap; local file restores use `local-files/`; Phase 14 database and user names come from `site-databases.csv`; `patches/` is guaranteed to exist; the Phase 8 loop no longer calls `exit`; and the first apply scales to the HPA minimum.

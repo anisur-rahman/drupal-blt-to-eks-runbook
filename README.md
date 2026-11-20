@@ -1,20 +1,33 @@
-# Drupal Multisite: Acquia BLT → AWS EKS Runbook
+# Drupal Multisite Modernization: Acquia BLT → AWS EKS
 
-A step-by-step command runbook for moving a Drupal multisite from Acquia Cloud with BLT to a container platform on Amazon EKS. It covers the whole path: inventory and backups, removing BLT, container-ready settings, the AWS landing zone, Kubernetes manifests, CI/CD with GitHub Actions (OIDC), data migration, cutover, rollback and the Drupal 11 upgrade.
+**Reference architecture, migration runbook and tested demo.**
 
-> **Status: reference design.** This runbook is a proposed implementation, not a record of a completed migration. All commands are examples that need validation in your own environment. Start on a non-production clone, and record evidence, approvals and rollback checkpoints before each destructive step.
+A 20-phase approach to modernizing a Drupal multisite platform: removing the Acquia BLT dependency, moving to Composer and Drush workflows, running the sites in containers, deploying to Amazon EKS with CI/CD, and migrating with rehearsed cutover and rollback. A companion demo puts the core patterns into running code, and CI tests them on every change.
 
-## Files
+[![Demo – validate, build and smoke test](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/workflows/demo-validate.yml/badge.svg)](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/workflows/demo-validate.yml)
 
-| File | Description |
-|------|-------------|
-| [`RUNBOOK.md`](RUNBOOK.md) | The full runbook. Read it here on GitHub. |
-| [`Drupal_BLT_to_EKS_Runbook_v4.docx`](Drupal_BLT_to_EKS_Runbook_v4.docx) | The same content as a Word document (revision 4). |
-| [`drupal-multisite-eks-demo/`](drupal-multisite-eks-demo/) | A starter project that applies the runbook: two Drupal 11 sites without BLT, Docker Compose for local runs, and a Helm chart for EKS. See its own [README](drupal-multisite-eks-demo/README.md). |
+> **Status: reference design, not a completed production migration.** The Acquia and AWS steps have not been executed against a real Acquia environment or AWS account. The settings, container and Kubernetes patterns have been run locally and on a kind cluster. The runbook's [validation status](RUNBOOK.md#validation-status) table separates the two.
 
-## What's covered
+## What's here
 
-The runbook is organised into 20 phases:
+| | |
+|---|---|
+| [`RUNBOOK.md`](RUNBOOK.md) | The runbook: executive summary, target architecture, design decisions, risks, and every phase as commands. Read it here on GitHub. |
+| [`Drupal_BLT_to_EKS_Runbook_v5.docx`](Drupal_BLT_to_EKS_Runbook_v5.docx) | The same runbook as a Word document (revision 5). |
+| [`drupal-multisite-eks-demo/`](drupal-multisite-eks-demo/) | Two Drupal 11 sites on one codebase without BLT: Docker Compose, a Helm chart, a site-to-database mapping validator, and smoke tests. See its [README](drupal-multisite-eks-demo/README.md). |
+
+## What has been tested
+
+All of this runs in the [CI workflow](.github/workflows/demo-validate.yml). Results and screenshots are in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md).
+
+- **Image build:** Drupal 11 and Drush 13 on PHP 8.3, with no BLT.
+- **Multisite on Docker Compose:** both sites install; each hostname serves its own site from its own database, and config doesn't leak between them. Unknown hostnames get 404, not the Drupal installer. Cron runs.
+- **Helm chart on Kubernetes (kind):** the chart installs; both sites install and serve through the Service; the files volume is writable; each site's CronJob runs. The rendered manifests pass `kubeconform` schema validation.
+- **Migration inventory:** the `site-databases.csv` validator passes on valid input and rejects 9 kinds of bad input.
+
+Building and running the demo turned up nine defects that static checks had missed. One example: every page was a PHP fatal error returned with HTTP 200. All nine are listed in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md#defects-found-by-running-the-demo).
+
+## The runbook's phases
 
 | Phases | Topic |
 |--------|-------|
@@ -30,15 +43,14 @@ The runbook is organised into 20 phases:
 
 ## Stack
 
-Drupal 10/11 multisite · Composer · Drush · Docker · Amazon EKS · ECR · RDS (MySQL) · EFS · ElastiCache (Redis) · ALB · CloudFront · WAF · External Secrets · Helm · eksctl · GitHub Actions
+Drupal 11 multisite · Composer · Drush · Docker · Helm · Kubernetes · Amazon EKS · ECR · RDS (MySQL) · EFS · ElastiCache (Redis) · ALB · CloudFront · WAF · External Secrets · GitHub Actions (OIDC)
 
-## Using it
+## Using the runbook
 
-1. Copy the `migration.env` block from [Conventions and prerequisites](RUNBOOK.md#conventions-and-prerequisites) and replace the example values with your own.
-2. Run `source migration.env` in each shell before running any commands.
-3. Work through the phases in order on a non-production clone first.
+1. Copy the `migration.env` block from [Conventions and prerequisites](RUNBOOK.md#conventions-and-prerequisites) and replace the example values.
+2. Work through the phases in order on a non-production clone first, collecting the evidence listed in [Production readiness gates](RUNBOOK.md#production-readiness-gates).
 
-All values in this repo are placeholders: AWS account `123456789012`, domains under `example.org`, and the GitHub org `myorg`. Don't commit real account IDs, hostnames, certificate ARNs, inventories or backups to a fork.
+All values in this repo are placeholders: AWS account `123456789012`, domains under `example.org`, GitHub org `myorg`. Don't commit real account IDs, hostnames, certificate ARNs, inventories or backups to a fork.
 
 ## Author
 

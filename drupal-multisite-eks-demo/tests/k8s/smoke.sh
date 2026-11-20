@@ -61,7 +61,16 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: unknown.example.net" htt
 echo "unknown.example.net/core/install.php -> $code"; [ "$code" = 404 ]
 
 step "Public files volume is writable by Drupal"
-kc exec deploy/drupal -- sh -c 'ls -d web/sites/site_a/files/css web/sites/site_b/files/css && su -s /bin/sh www-data -c "touch web/sites/site_a/files/.write-test" && echo writable'
+# Drupal writes each aggregated CSS file to public files the first time it is requested,
+# so fetching the page's CSS URL proves the web server user can write to the volume.
+for s in $SITES; do
+  h=$(host "$s")
+  css=$(curl -s -H "Host: $h" http://127.0.0.1:18080/ | grep -o "/sites/$s/files/css/[^\"?]*\.css" | head -1)
+  [ -n "$css" ] || { echo "FAIL: no aggregated CSS link on $h"; exit 1; }
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $h" "http://127.0.0.1:18080$css")
+  echo "$h$css -> $code"; [ "$code" = 200 ] || { echo "FAIL: CSS not written for $s"; exit 1; }
+  kc exec deploy/drupal -- test -s "web$css" || { echo "FAIL: $css missing on the volume"; exit 1; }
+done
 
 step "Per-site CronJobs run"
 for s in $SITES; do
