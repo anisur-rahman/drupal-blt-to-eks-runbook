@@ -1,0 +1,34 @@
+services:
+  app:
+    build: .
+    ports: ["8080:80"]
+    environment:
+      APP_ENV: local
+      DB_HOST: db
+      DB_USER: drupal
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      SITE_A_DB_NAME: site_a
+      SITE_B_DB_NAME: site_b
+      SITE_A_TRUSTED_HOSTS: '^site-a\\.localhost$'
+      SITE_B_TRUSTED_HOSTS: '^site-b\\.localhost$'
+    volumes:
+      - ./local-files/site_a:/var/www/html/web/sites/site_a/files
+      - ./local-files/site_b:/var/www/html/web/sites/site_b/files
+    depends_on:
+      db: {condition: service_healthy}
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: site_a
+      MARIADB_USER: drupal
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 10s
+      retries: 15
+volumes:
+  dbdata:

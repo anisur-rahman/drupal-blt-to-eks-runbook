@@ -1,0 +1,6 @@
+.git
+.env
+vendor
+local-files
+*.sql
+*.sql.gz

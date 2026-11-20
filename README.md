@@ -10,6 +10,7 @@ A step-by-step command runbook for moving a Drupal multisite from Acquia Cloud w
 |------|-------------|
 | [`RUNBOOK.md`](RUNBOOK.md) | The full runbook. Read it here on GitHub. |
 | [`Drupal_BLT_to_EKS_Runbook_v4.docx`](Drupal_BLT_to_EKS_Runbook_v4.docx) | The same content as a Word document (revision 4). |
+| [`drupal-multisite-eks-demo/`](drupal-multisite-eks-demo/) | A starter project that applies the runbook: two Drupal 11 sites without BLT, Docker Compose for local runs, and a Helm chart for EKS. See its own [README](drupal-multisite-eks-demo/README.md). |
 
 ## What's covered
 

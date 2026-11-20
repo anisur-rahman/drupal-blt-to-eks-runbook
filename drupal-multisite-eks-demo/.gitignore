@@ -1,0 +1,18 @@
+.env
+vendor/
+# Ignore the Composer-built web root, but keep the multisite config.
+# (Ignore contents with "/*" so the "!" re-includes below can work.)
+web/*
+!web/sites/
+web/sites/*
+!web/sites/sites.php
+!web/sites/site_a/
+!web/sites/site_b/
+web/sites/site_a/*
+web/sites/site_b/*
+!web/sites/site_a/settings.php
+!web/sites/site_b/settings.php
+local-files/
+*.sql
+*.sql.gz
+.DS_Store

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  # No replicas here: HPA owns scaling.
+  selector:
+    matchLabels: {app: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}}
+    spec:
+      containers:
+        - name: drupal
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          ports: [{containerPort: 80}]
+          env:
+            - name: APP_ENV
+              value: prod
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: password
+            {{- range .Values.sites }}
+            - name: {{ .id | upper }}_DB_NAME
+              value: {{ .dbName | quote }}
+            - name: {{ .id | upper }}_TRUSTED_HOSTS
+              value: {{ printf "^%s$" (.host | replace "." "\\.") | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /user/login
+              port: 80
+              httpHeaders: [{name: Host, value: {{ (index .Values.sites 0).host | quote }}}]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            {{- range .Values.sites }}
+            - name: public-files
+              mountPath: /var/www/html/web/sites/{{ .id }}/files
+              subPath: {{ .id }}
+            {{- end }}
+      volumes:
+        - name: public-files
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}

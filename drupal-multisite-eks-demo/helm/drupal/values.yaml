@@ -1,0 +1,24 @@
+image:
+  repository: example.invalid/drupal-multisite
+  # Use a real immutable digest before deployment
+  digest: sha256:REPLACE_WITH_VERIFIED_DIGEST
+replicaCountInitial: 2
+autoscaling:
+  minReplicas: 2
+  maxReplicas: 5
+  cpuUtilization: 70
+service:
+  port: 80
+persistence:
+  existingClaim: drupal-public-files
+database:
+  host: REPLACE_RDS_ENDPOINT
+  user: drupal
+  existingSecret: drupal-db
+sites:
+  - id: site_a
+    host: site-a.example.org
+    dbName: site_a
+  - id: site_b
+    host: site-b.example.org
+    dbName: site_b

@@ -1,0 +1,34 @@
+{{- range .Values.sites }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $.Release.Name }}-cron-{{ .id | replace "_" "-" }}
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cron
+              image: "{{ $.Values.image.repository }}@{{ $.Values.image.digest }}"
+              command: ["/bin/sh", "-c"]
+              args: ["vendor/bin/drush --uri=https://{{ .host }} cron"]
+              env:
+                - name: DB_HOST
+                  value: {{ $.Values.database.host | quote }}
+                - name: DB_USER
+                  value: {{ $.Values.database.user | quote }}
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.database.existingSecret }}
+                      key: password
+                - name: {{ .id | upper }}_DB_NAME
+                  value: {{ .dbName | quote }}
+                - name: {{ .id | upper }}_TRUSTED_HOSTS
+                  value: {{ printf "^%s$" (.host | replace "." "\\.") | quote }}
+{{- end }}

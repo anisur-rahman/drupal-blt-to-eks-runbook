@@ -1,0 +1,24 @@
+{
+  "name": "portfolio/drupal-multisite-eks-demo",
+  "description": "Drupal multisite reference implementation independent of Acquia BLT",
+  "type": "project",
+  "license": "GPL-2.0-or-later",
+  "repositories": [{"type": "composer", "url": "https://packages.drupal.org/8"}],
+  "require": {
+    "php": "^8.3",
+    "drupal/core-recommended": "^11",
+    "drupal/core-composer-scaffold": "^11",
+    "drupal/core-project-message": "^11",
+    "drush/drush": "^13"
+  },
+  "config": {
+    "allow-plugins": {
+      "drupal/core-composer-scaffold": true,
+      "drupal/core-project-message": true
+    },
+    "sort-packages": true
+  },
+  "extra": {
+    "drupal-scaffold": {"locations": {"web-root": "web/"}}
+  }
+}

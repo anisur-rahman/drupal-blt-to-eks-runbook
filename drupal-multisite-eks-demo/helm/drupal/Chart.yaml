@@ -1,0 +1,6 @@
+apiVersion: v2
+name: drupal
+description: Portfolio Drupal multisite EKS reference chart
+type: application
+version: 0.1.0
+appVersion: "11"
