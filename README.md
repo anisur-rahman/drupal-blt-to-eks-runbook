@@ -16,6 +16,49 @@ A 20-phase approach to modernizing a Drupal multisite platform: removing the Acq
 | [`Drupal_BLT_to_EKS_Runbook_v5.docx`](Drupal_BLT_to_EKS_Runbook_v5.docx) | The same runbook as a Word document (revision 5). |
 | [`drupal-multisite-eks-demo/`](drupal-multisite-eks-demo/) | Two Drupal 11 sites on one codebase without BLT: Docker Compose, a Helm chart, a site-to-database mapping validator, and smoke tests. See its [README](drupal-multisite-eks-demo/README.md). |
 
+## Repository structure
+
+```
+.
+├── README.md                              This page
+├── RUNBOOK.md                             The 20-phase runbook (revision 5)
+├── Drupal_BLT_to_EKS_Runbook_v5.docx      The runbook as a Word document
+├── .github/workflows/
+│   └── demo-validate.yml                  CI: static checks, Compose and Kubernetes smoke tests
+└── drupal-multisite-eks-demo/             Working demo: two Drupal 11 sites, one codebase
+    ├── README.md                          How to run the demo
+    ├── Dockerfile                         PHP 8.3 + Apache image with Drupal 11 and Drush 13
+    ├── compose.yaml                       Local stack: Drupal + MariaDB
+    ├── composer.json                      Drupal dependencies, no Acquia BLT
+    ├── .env.example                       Local database passwords (copy to .env)
+    ├── web/sites/
+    │   ├── sites.php                      Hostname → site directory map
+    │   ├── default/settings.php           Returns 404 for unknown hostnames
+    │   ├── site_a/settings.php            Environment-driven settings, one per site
+    │   └── site_b/settings.php
+    ├── config/site_{a,b}/sync/            Config sync directories, outside public files
+    ├── docker/db-init/01-sites.sh         Creates the second site's database locally
+    ├── helm/drupal/                       Helm chart
+    │   ├── values.yaml                    Image, database, site list, Ingress settings
+    │   └── templates/                     Deployment, Service, HPA, per-site CronJobs, Ingress
+    ├── migration/
+    │   └── site-databases.example.csv     Site → Acquia database → target database mapping
+    ├── scripts/
+    │   ├── validate-site-databases.sh     Checks the mapping before backups (runbook Phase 3)
+    │   ├── install-local.sh               Installs both sites locally
+    │   └── deploy-sites.sh                Runs drush deploy per site, in order
+    ├── tests/
+    │   ├── compose/smoke.sh               Docker Compose end-to-end test
+    │   ├── k8s/                           Kubernetes (kind) end-to-end test + test database
+    │   └── site-databases/                Validator tests and bad-input fixtures
+    └── docs/
+        ├── EVIDENCE.md                    What was run, where, and the results
+        ├── evidence/                      Screenshots and smoke test log
+        ├── ARCHITECTURE.md                Architecture decisions
+        ├── DISCOVERY.md                   Discovery checklist (runbook Phases 1–4)
+        └── CUTOVER.md                     Cutover checklist (runbook Phases 17–20)
+```
+
 ## What has been tested
 
 All of this runs in the [CI workflow](.github/workflows/demo-validate.yml). Results and screenshots are in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md).
