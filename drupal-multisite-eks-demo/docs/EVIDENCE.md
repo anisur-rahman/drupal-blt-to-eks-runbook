@@ -23,7 +23,10 @@ What has actually been run, where, and what it showed. Anything not listed as ru
 | Cron per site | Local, CI | 2026-11-20 | Compose smoke test | Pass: `system.cron_last` set on both sites |
 | Site-to-database validator | Local, CI | 2026-11-20 | [`tests/site-databases/run.sh`](../tests/site-databases/run.sh) | Pass: valid file accepted; 9 kinds of bad input rejected |
 | Helm lint and schema validation | Local, CI | 2026-11-20 | `helm lint`, `kubeconform -strict` | Pass: 6 resources valid (Deployment, Service, HPA, 2 CronJobs, Ingress) |
-| Helm install on Kubernetes | CI (kind) | 2026-11-20 | [`tests/k8s/smoke.sh`](../tests/k8s/smoke.sh) | See [CI runs](#ci-runs) |
+| Helm install on Kubernetes | CI (kind) | 2026-11-20 | [`tests/k8s/smoke.sh`](../tests/k8s/smoke.sh) | Pass: chart installs; pod ready with 0 restarts |
+| Both sites on Kubernetes | CI (kind) | 2026-11-20 | kind smoke test | Pass: each site installs into its own database; `site-a.example.org` and `site-b.example.org` → 200 with their own titles through the Service; unknown host → 404 |
+| Files volume writable | CI (kind) | 2026-11-20 | kind smoke test | Pass: Drupal generated each site's aggregated CSS on the volume (200) |
+| Per-site CronJobs | CI (kind) | 2026-11-20 | kind smoke test | Pass: a Job created from each CronJob completed and set `system.cron_last` |
 | EKS deployment | AWS | — | — | **Not run** |
 | Load test | — | — | — | **Not run** |
 | Backup and restore from Acquia | — | — | — | **Not run** |
@@ -33,6 +36,13 @@ What has actually been run, where, and what it showed. Anything not listed as ru
 ## CI runs
 
 Every push that changes this folder runs [the workflow](../../.github/workflows/demo-validate.yml); see the [list of runs](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/workflows/demo-validate.yml). Each run keeps the smoke test logs as downloadable artifacts (`compose-smoke-log`, `k8s-smoke-log`).
+
+First fully passing run of all three jobs: [run 44817880453](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/runs/44817880453).
+
+## Known warnings
+
+- **Private files directory (cron Jobs on kind):** Drupal logs that it couldn't write `.htaccess` to the private files directory. The demo points private files at a placeholder path in `/tmp` inside the container; production needs a mounted private volume (runbook Phases 14–15). Cron still completes.
+- **HPA metrics (kind):** the HPA reports `cpu: <unknown>` because kind has no metrics-server. EKS installs it as an add-on (runbook Phase 12).
 
 ## Screenshots
 
