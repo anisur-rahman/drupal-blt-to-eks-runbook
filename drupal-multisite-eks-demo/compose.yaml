@@ -1,34 +1,71 @@
+# Runbook Phase 10: local stack shaped like the Kubernetes pod.
+# app (PHP-FPM) and web (nginx) share one network namespace, so nginx reaches
+# PHP-FPM on 127.0.0.1:9000 exactly as in the pod. Only public and private files
+# are mounted: site settings stay in the image. Files live in named volumes, not host
+# folders: on macOS exFAT/network drives the host adds "._*" files that break Drupal's
+# file cleanup. Load restored files with: docker compose cp <dir>/. app:/var/www/html/web/sites/<site>/files/
+x-site-env: &site-env
+  APP_ENV: local
+  DB_HOST: db
+  DB_USER: drupal
+  DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+  SITE_A_DB_NAME: site_a
+  SITE_B_DB_NAME: site_b
+  SITE_A_HASH_SALT: ${SITE_A_HASH_SALT:?set SITE_A_HASH_SALT in .env}
+  SITE_B_HASH_SALT: ${SITE_B_HASH_SALT:?set SITE_B_HASH_SALT in .env}
+  SITE_A_TRUSTED_HOSTS: '^site-a\.localhost$'
+  SITE_B_TRUSTED_HOSTS: '^site-b\.localhost$'
+
 services:
   app:
-    build: .
-    ports: ["8080:80"]
-    environment:
-      APP_ENV: local
-      DB_HOST: db
-      DB_USER: drupal
-      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
-      SITE_A_DB_NAME: site_a
-      SITE_B_DB_NAME: site_b
-      SITE_A_TRUSTED_HOSTS: '^site-a\.localhost$'
-      SITE_B_TRUSTED_HOSTS: '^site-b\.localhost$'
+    build: {context: ., target: app}
+    image: drupal-multisite:app-local
+    environment: *site-env
+    ports: ["8080:8080"]          # published here because web shares app's network
     volumes:
-      - ./local-files/site_a:/var/www/html/web/sites/site_a/files
-      - ./local-files/site_b:/var/www/html/web/sites/site_b/files
+      - files_site_a:/var/www/html/web/sites/site_a/files
+      - files_site_b:/var/www/html/web/sites/site_b/files
+      - private:/mnt/private
     depends_on:
       db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 5s
+      retries: 20
+
+  web:
+    build: {context: ., target: web}
+    image: drupal-multisite:web-local
+    network_mode: "service:app"
+    volumes:
+      # nocopy: only app (UID 82) seeds the empty volume, so Drupal owns the files directory.
+      - {type: volume, source: files_site_a, target: /var/www/html/web/sites/site_a/files, read_only: true, volume: {nocopy: true}}
+      - {type: volume, source: files_site_b, target: /var/www/html/web/sites/site_b/files, read_only: true, volume: {nocopy: true}}
+    depends_on:
+      app: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      retries: 20
+
   db:
     image: mariadb:11.4
     environment:
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
       MARIADB_DATABASE: site_a
       MARIADB_USER: drupal
-      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - dbdata:/var/lib/mysql
-      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+      # Mount the one script, not the folder: macOS "._*" files would run as init scripts.
+      - ./docker/db-init/01-sites.sh:/docker-entrypoint-initdb.d/01-sites.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
-      interval: 10s
-      retries: 15
+      interval: 5s
+      retries: 30
+
 volumes:
   dbdata:
+  files_site_a:
+  files_site_b:
+  private:

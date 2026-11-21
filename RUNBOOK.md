@@ -2,7 +2,7 @@
 
 Reference architecture and migration runbook · Revision 5 · Nov 20, 2026 · Md Anisur Rahman
 
-> **Status: reference design, not a completed migration.** The Acquia and AWS commands in this runbook have not been executed against a real Acquia environment or AWS account. The settings, container and Kubernetes patterns *have* been exercised in the companion [`drupal-multisite-eks-demo`](drupal-multisite-eks-demo/) project, whose CI builds the image, runs both sites under Docker Compose and deploys the Helm chart to a kind cluster. See [Validation status](#validation-status).
+> **Status: reference design, not a completed migration.** The Acquia and AWS commands in this runbook have not been executed against a real Acquia environment or AWS account. The settings, container and Kubernetes patterns *have* been exercised in the companion [`drupal-multisite-eks-demo`](drupal-multisite-eks-demo/) project, whose CI builds the nginx + PHP-FPM images, runs both sites under Docker Compose and deploys the Helm chart to a kind cluster. See [Validation status](#validation-status).
 
 **Labels used below**
 
@@ -347,8 +347,9 @@ Keep each site's existing `settings.php`. Add the shared settings to it through 
       | \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_PROTO
       | \Symfony\Component\HttpFoundation\Request::HEADER_X_FORWARDED_PORT;
 
-    // Redis (ElastiCache) when the module is enabled
-    if (getenv('REDIS_HOST') && file_exists(DRUPAL_ROOT . '/modules/contrib/redis')) {
+    // Redis (ElastiCache). Set REDIS_ENABLED=1 only after the redis module is installed on the site:
+    // pointing the cache at a service from a module that is not enabled breaks every request.
+    if (getenv('REDIS_HOST') && getenv('REDIS_ENABLED') === '1' && file_exists(DRUPAL_ROOT . '/modules/contrib/redis')) {
       $settings['redis.connection']['interface'] = 'PhpRedis';
       $settings['redis.connection']['host'] = getenv('REDIS_HOST');
       $settings['cache_prefix'] = $site_name . '_';
@@ -406,7 +407,7 @@ Preserve each existing site settings.php, review BLT include dependencies and cu
 
 ## Phases 9–11: Build, run locally, test
 
-> **Partly validated in the demo.** The demo builds a simpler single-container image (Apache + PHP) and runs both sites under Docker Compose in CI. The two-image nginx + PHP-FPM build below is the production design and has not been built.
+> **Validated in the demo.** The demo builds this two-image design (`app` PHP-FPM + `web` nginx) and runs both sites under Docker Compose and on kind. Building it found three defects in the earlier revision of this phase, all corrected below: PHP-FPM's `clear_env`, the `HTTPS` FastCGI parameter, and the Redis guard in Phase 8. See the demo's [`Dockerfile`](drupal-multisite-eks-demo/Dockerfile) for a tested version.
 
 ### 9. Production container
 
@@ -436,6 +437,8 @@ One Dockerfile produces two images: `app` (PHP-FPM with code) and `web` (Nginx w
      && docker-php-ext-install -j$(nproc) pdo_mysql gd opcache intl zip \
      && pecl install redis apcu && docker-php-ext-enable redis apcu && apk del .build
     COPY docker/php/*.ini /usr/local/etc/php/conf.d/
+    # PHP-FPM clears the environment by default; without this, getenv() in settings.shared.php is empty
+    COPY docker/php/zz-env.conf /usr/local/etc/php-fpm.d/zz-env.conf
     WORKDIR /var/www/html
     COPY --from=vendor --chown=www-data:www-data /app ./
     COPY --from=theme --chown=www-data:www-data /theme/dist web/themes/custom/mytheme/dist
@@ -462,6 +465,11 @@ The Dockerfile copies these supporting files. Create them from a terminal in the
     expose_php=Off
     EOF
 
+    cat > docker/php/zz-env.conf <<'EOF'
+    [www]
+    clear_env = no
+    EOF
+
     cat > docker/nginx/default.conf <<'EOF'
     server {
       listen 8080;
@@ -478,7 +486,8 @@ The Dockerfile copies these supporting files. Create them from a terminal in the
         fastcgi_split_path_info ^(.+?\.php)(|/.*)$;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        fastcgi_param HTTPS $http_x_forwarded_proto if_not_empty;
+        # Do not set HTTPS from X-Forwarded-Proto: "HTTPS=http" counts as on in PHP and the header is
+        # client-controlled. Drupal reads it only from TRUSTED_PROXY_IPS (settings.shared.php).
         fastcgi_pass 127.0.0.1:9000;
       }
     }
@@ -775,7 +784,7 @@ EFS is used for files because it behaves like the POSIX storage on Acquia. Move 
 
 ## Phase 15: Kubernetes workload
 
-> **Partly validated in the demo.** The demo's Helm chart (Deployment, Service, HPA, per-site CronJobs, optional Ingress) is installed on a kind cluster in CI, where both sites install, serve pages and run cron. The EKS-specific parts below (ALB, EFS, External Secrets, IAM) are environment-dependent (AWS).
+> **Partly validated in the demo.** The demo's Helm chart (nginx + PHP-FPM Deployment, Service, HPA, PDB, per-site CronJobs and `drush deploy` Jobs, Ingress) is installed on a kind cluster in CI, where both sites install with per-site database users, serve pages, run cron and deploy in order, and the HPA scales out under load. The EKS-specific parts below (ALB, EFS, External Secrets, IAM) are environment-dependent (AWS).
 
 All manifests go in `k8s/`. Hostname routing is done by Drupal's `sites.php`, so every host points at the same Service. The examples show two sites; repeat the per-site lines for each one.
 
@@ -1373,19 +1382,22 @@ These gates must be met, with evidence, before any production use. They suppleme
 
 | Area | Status | Evidence |
 |---|---|---|
-| Env-driven multisite settings, `sites.php` routing, unknown hosts refused | Validated in the demo (Docker Compose, kind) | [Demo CI](drupal-multisite-eks-demo/README.md#continuous-integration), [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md) |
-| One database per site, isolation between sites | Validated in the demo | Compose and kind smoke tests |
-| Per-site cron as Kubernetes CronJobs | Validated in the demo (kind) | kind smoke test |
+| Env-driven multisite settings (`settings.shared.php` include), `sites.php` routing, unknown hosts refused | Validated in the demo (Docker Compose, kind) | [Demo CI](drupal-multisite-eks-demo/README.md#continuous-integration), [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md) |
+| One database and one database user per site, isolation between sites | Validated in the demo (users on kind) | Compose and kind smoke tests |
+| Two-image nginx + PHP-FPM build (Phase 9), local stack (Phase 10) | Validated in the demo | Compose smoke test |
+| Kubernetes workload: nginx + PHP-FPM pod, PDB, per-site CronJobs, per-site `drush deploy` Jobs in order (Phase 15) | Validated in the demo (kind) | kind smoke test |
+| Ingress host rules and HPA scale-out | Validated in the demo (kind, Traefik and metrics-server standing in for the ALB and EKS add-on) | Ingress and autoscaling test |
 | Helm chart renders valid Kubernetes resources | Validated in the demo | `helm lint` and `kubeconform` in CI |
 | `site-databases.csv` validation | Validated in the demo | Validator test suite in CI |
 | BLT removal (Phases 5–7) | Not executed | Needs the real codebase |
 | Acquia backups, remote Drush, cutover (Phases 1–4, 17, 19–20) | Not executed | Needs a real Acquia environment |
 | AWS landing zone, EKS, RDS, EFS, ALB, External Secrets, OIDC (Phases 12–16) | Not executed | Needs an AWS account |
-| Two-image nginx + PHP-FPM build (Phase 9) | Not built | — |
 | Reverse-proxy tests (Phase 8) | Not executed | Needs the real ALB / CloudFront path |
-| Load, accessibility and restore tests (Phase 18) | Not executed | — |
+| External Secrets, EFS, ALB-specific Ingress annotations | Not executed | Templates only; need AWS |
+| Load, accessibility and restore tests (Phase 18) | Not executed | The demo's autoscaling test shows the HPA works, not capacity |
 
 ## Revision history
 
+- **Revision 6 (20 Nov 2026):** the demo now builds and tests the Phase 9 nginx + PHP-FPM design, the Phase 8 `settings.shared.php` include, per-site database users, and the Phase 15 workload (PDB, per-site deploy Jobs, Ingress, HPA) on kind. Fixed three defects found by building them: PHP-FPM `clear_env = no` (the environment was otherwise invisible to settings); removed `fastcgi_param HTTPS $http_x_forwarded_proto` (`HTTPS=http` counts as on, and the header is client-controlled); Redis is switched on only with `REDIS_ENABLED=1`. The Word document is still revision 5.
 - **Revision 5 (20 Nov 2026):** replaced the comparison preface with an executive summary, objectives, scope, target architecture, design decisions and risks; labelled environment-dependent phases; added a validated `site-databases.csv` format and validator; removed the contradictory "three lines" instruction in Phase 8; separated shell commands from the Dockerfile (Phase 9), `cluster.yaml` (Phase 12) and the deploy script (Phase 16); replaced the reverse-proxy assumption with a topology table and verification tests; the cron Job now fails when any site's cron fails; `automated_cron` is uninstalled; the restore test uses MySQL 8.0 to match RDS; added a validation status table.
 - **Revision 4:** the BLT settings include is now removed before `composer remove`; BLT is removed with `--minimal-changes`; `TRUSTED_PROXY_IPS` is set to the ALB public subnet CIDRs in the ConfigMap; local file restores use `local-files/`; Phase 14 database and user names come from `site-databases.csv`; `patches/` is guaranteed to exist; the Phase 8 loop no longer calls `exit`; and the first apply scales to the HPA minimum.

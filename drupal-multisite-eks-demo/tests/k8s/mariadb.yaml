@@ -11,12 +11,12 @@ spec:
         - name: mariadb
           image: mariadb:11.4
           env:
-            - {name: MARIADB_DATABASE, value: site_a}
-            - {name: MARIADB_USER, value: drupal}
-            - name: MARIADB_PASSWORD
-              valueFrom: {secretKeyRef: {name: drupal-db, key: password}}
             - name: MARIADB_ROOT_PASSWORD
-              valueFrom: {secretKeyRef: {name: drupal-db, key: root-password}}
+              valueFrom: {secretKeyRef: {name: db-root, key: password}}
+            - name: SITE_A_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: drupal-env, key: SITE_A_DB_PASSWORD}}
+            - name: SITE_B_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: drupal-env, key: SITE_B_DB_PASSWORD}}
           ports: [{containerPort: 3306}]
           readinessProbe:
             exec: {command: ["healthcheck.sh", "--connect", "--innodb_initialized"]}
@@ -39,7 +39,7 @@ spec:
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: {name: drupal-public-files}
+metadata: {name: drupal-files}
 spec:
   accessModes: [ReadWriteOnce]   # kind has one node; EKS uses ReadWriteMany on EFS
   resources: {requests: {storage: 1Gi}}

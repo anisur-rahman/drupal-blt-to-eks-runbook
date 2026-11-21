@@ -1,468 +1,285 @@
 
-=== Build and start
- Image drupal-multisite-eks-demo-app Building 
+=== Build and start (app = PHP-FPM, web = nginx sharing its network)
+ Image drupal-multisite:web-local Building 
+ Image drupal-multisite:app-local Building 
 #1 [internal] load local bake definitions
-#1 reading from stdin 606B done
+#1 reading from stdin 1.21kB done
 #1 DONE 0.0s
 
-#2 [internal] load build definition from Dockerfile
-#2 transferring dockerfile: 1.68kB done
+#2 [app internal] load build definition from Dockerfile
+#2 transferring dockerfile: 3.10kB done
 #2 DONE 0.0s
 
-#3 [internal] load metadata for docker.io/library/php:8.3-apache
-#3 ...
-
-#4 [internal] load metadata for docker.io/library/composer:2
-#4 DONE 0.5s
-
-#3 [internal] load metadata for docker.io/library/php:8.3-apache
+#3 [web] resolve image config for docker-image://docker.io/docker/dockerfile:1
 #3 DONE 0.5s
 
-#5 [internal] load .dockerignore
-#5 transferring context: 84B done
-#5 DONE 0.0s
+#4 [app] docker-image://docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
+#4 resolve docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183 done
+#4 CACHED
 
-#6 [composer-bin 1/1] FROM docker.io/library/composer:2@sha256:919efe8e62179c71dfd31fad035fd671fe7454211c6b2aa30a10af0ab4acedba
-#6 resolve docker.io/library/composer:2@sha256:919efe8e62179c71dfd31fad035fd671fe7454211c6b2aa30a10af0ab4acedba done
-#6 DONE 0.0s
+#5 [web internal] load metadata for docker.io/library/php:8.3-fpm-alpine
+#5 DONE 0.2s
 
-#7 [stage-1  1/15] FROM docker.io/library/php:8.3-apache@sha256:3048d9fc5448e49885f0b9c7ab9a6a4ec0f6560c2e83d578b9724f9f92eff48f
-#7 resolve docker.io/library/php:8.3-apache@sha256:3048d9fc5448e49885f0b9c7ab9a6a4ec0f6560c2e83d578b9724f9f92eff48f done
-#7 DONE 0.0s
+#6 [web internal] load metadata for docker.io/library/composer:2
+#6 DONE 0.2s
 
-#8 [stage-1  2/15] RUN apt-get update && apt-get install -y --no-install-recommends     git unzip libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev libonig-dev default-mysql-client     && docker-php-ext-configure gd --with-freetype --with-jpeg     && docker-php-ext-install -j"$(nproc)" pdo_mysql intl gd zip opcache     && a2enmod rewrite headers     && rm -rf /var/lib/apt/lists/*
-#8 CACHED
+#7 [web internal] load metadata for docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+#7 DONE 0.2s
 
-#9 [stage-1  3/15] COPY --from=composer-bin /usr/bin/composer /usr/local/bin/composer
-#9 CACHED
+#8 [web internal] load .dockerignore
+#8 transferring context: 179B done
+#8 DONE 0.0s
 
-#10 [internal] load build context
-#10 transferring context: 807B done
+#9 [web web 1/3] FROM docker.io/nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+#9 resolve docker.io/nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0 0.0s done
+#9 DONE 0.0s
+
+#10 [web php-base 1/5] FROM docker.io/library/php:8.3-fpm-alpine@sha256:30b1b9bfbfce33272aa2821a079e63fcad86b8c070122a798e131d8773524d0d
+#10 resolve docker.io/library/php:8.3-fpm-alpine@sha256:30b1b9bfbfce33272aa2821a079e63fcad86b8c070122a798e131d8773524d0d 0.0s done
 #10 DONE 0.0s
 
-#11 [stage-1  4/15] RUN cp "/usr/local/etc/php/php.ini-production" "/usr/local/etc/php/php.ini"     && printf 'zend.assertions = 0\n' > "/usr/local/etc/php/conf.d/zz-drupal.ini"
-#11 DONE 0.1s
+#11 [web] FROM docker.io/library/composer:2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93
+#11 resolve docker.io/library/composer:2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 0.0s done
+#11 DONE 0.0s
 
-#12 [stage-1  5/15] RUN sed -ri 's!/var/www/html!/var/www/html/web!g' /etc/apache2/sites-available/*.conf /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
-#12 DONE 0.1s
+#12 [web internal] load build context
+#12 transferring context: 483.66kB 0.0s done
+#12 DONE 0.0s
 
-#13 [stage-1  6/15] WORKDIR /var/www/html
+#13 [app internal] load build context
+#13 transferring context: 481.94kB 0.0s done
 #13 DONE 0.0s
 
-#14 [stage-1  7/15] COPY composer.json ./
-#14 DONE 0.0s
+#14 [web vendor  6/10] COPY web/sites/site_a/settings.php web/sites/site_a/
+#14 CACHED
 
-#15 [stage-1  8/15] RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-#15 0.199 No composer.lock file present. Updating dependencies to latest instead of installing from lock file. See https://getcomposer.org/install for more information.
-#15 0.199 Loading composer repositories with package information
-#15 2.545 Updating dependencies
-#15 2.562 Lock file operations: 93 installs, 0 updates, 0 removals
-#15 2.562   - Locking asm89/stack-cors (v2.4.0)
-#15 2.562   - Locking chi-teck/drupal-code-generator (4.2.0)
-#15 2.562   - Locking composer/installers (v2.3.0)
-#15 2.562   - Locking composer/semver (3.4.4)
-#15 2.562   - Locking consolidation/annotated-command (4.10.6)
-#15 2.562   - Locking consolidation/config (3.2.2)
-#15 2.562   - Locking consolidation/filter-via-dot-access-data (2.0.3)
-#15 2.562   - Locking consolidation/log (3.1.3)
-#15 2.562   - Locking consolidation/output-formatters (4.7.2)
-#15 2.562   - Locking consolidation/robo (5.2.4)
-#15 2.562   - Locking consolidation/self-update (3.2.1)
-#15 2.562   - Locking consolidation/site-alias (4.1.3)
-#15 2.562   - Locking consolidation/site-process (6.1.0)
-#15 2.562   - Locking dflydev/dot-access-data (v3.0.3)
-#15 2.562   - Locking doctrine/lexer (3.0.3)
-#15 2.562   - Locking drupal/core (11.4.13)
-#15 2.562   - Locking drupal/core-composer-scaffold (11.4.13)
-#15 2.562   - Locking drupal/core-project-message (11.4.13)
-#15 2.562   - Locking drupal/core-recommended (11.4.13)
-#15 2.562   - Locking drush/drush (13.8.1)
-#15 2.562   - Locking egulias/email-validator (4.0.4)
-#15 2.562   - Locking grasmash/expander (3.0.1)
-#15 2.562   - Locking grasmash/yaml-cli (3.2.1)
-#15 2.562   - Locking guzzlehttp/guzzle (7.16.4)
-#15 2.562   - Locking guzzlehttp/promises (2.6.1)
-#15 2.562   - Locking guzzlehttp/psr7 (2.13.5)
-#15 2.562   - Locking justinrainbow/json-schema (6.8.2)
-#15 2.562   - Locking kevinrob/guzzle-cache-middleware (6.0.0)
-#15 2.562   - Locking laravel/prompts (v0.3.27)
-#15 2.562   - Locking league/container (4.2.5)
-#15 2.562   - Locking marc-mabe/php-enum (v4.7.2)
-#15 2.562   - Locking masterminds/html5 (2.12.0)
-#15 2.562   - Locking mck89/peast (v1.17.7)
-#15 2.562   - Locking nikic/php-parser (v5.9.0)
-#15 2.562   - Locking pear/archive_tar (1.6.1)
-#15 2.562   - Locking pear/console_getopt (v1.4.3)
-#15 2.562   - Locking pear/pear-core-minimal (v1.10.18)
-#15 2.562   - Locking pear/pear_exception (v1.0.2)
-#15 2.562   - Locking phootwork/collection (v3.2.3)
-#15 2.562   - Locking phootwork/lang (v3.2.3)
-#15 2.562   - Locking php-tuf/composer-stager (v2.1.1)
-#15 2.562   - Locking phpowermove/docblock (v4.0)
-#15 2.562   - Locking psr/cache (3.0.0)
-#15 2.562   - Locking psr/container (2.0.2)
-#15 2.562   - Locking psr/event-dispatcher (1.0.0)
-#15 2.562   - Locking psr/http-client (1.0.3)
-#15 2.562   - Locking psr/http-factory (1.1.0)
-#15 2.562   - Locking psr/http-message (2.0)
-#15 2.562   - Locking psr/log (3.0.2)
-#15 2.562   - Locking psy/psysh (v0.12.24)
-#15 2.562   - Locking ralouphie/getallheaders (3.0.3)
-#15 2.562   - Locking revolt/event-loop (v1.0.9)
-#15 2.562   - Locking sebastian/diff (7.0.1)
-#15 2.562   - Locking symfony/cache (v7.4.23)
-#15 2.562   - Locking symfony/cache-contracts (v3.8.1)
-#15 2.562   - Locking symfony/console (v7.4.23)
-#15 2.562   - Locking symfony/dependency-injection (v7.4.23)
-#15 2.562   - Locking symfony/deprecation-contracts (v3.7.1)
-#15 2.562   - Locking symfony/error-handler (v7.4.22)
-#15 2.562   - Locking symfony/event-dispatcher (v7.4.17)
-#15 2.562   - Locking symfony/event-dispatcher-contracts (v3.7.1)
-#15 2.562   - Locking symfony/filesystem (v7.4.23)
-#15 2.562   - Locking symfony/finder (v7.4.23)
-#15 2.562   - Locking symfony/http-foundation (v7.4.23)
-#15 2.562   - Locking symfony/http-kernel (v7.4.23)
-#15 2.562   - Locking symfony/mailer (v7.4.22)
-#15 2.562   - Locking symfony/mime (v7.4.22)
-#15 2.562   - Locking symfony/polyfill-ctype (v1.37.0)
-#15 2.562   - Locking symfony/polyfill-iconv (v1.43.0)
-#15 2.562   - Locking symfony/polyfill-intl-grapheme (v1.43.3)
-#15 2.562   - Locking symfony/polyfill-intl-idn (v1.43.0)
-#15 2.562   - Locking symfony/polyfill-intl-normalizer (v1.43.0)
-#15 2.562   - Locking symfony/polyfill-mbstring (v1.43.3)
-#15 2.562   - Locking symfony/polyfill-php80 (v1.43.0)
-#15 2.562   - Locking symfony/polyfill-php81 (v1.38.1)
-#15 2.562   - Locking symfony/polyfill-php83 (v1.43.0)
-#15 2.562   - Locking symfony/polyfill-php84 (v1.43.0)
-#15 2.562   - Locking symfony/polyfill-php85 (v1.44.0)
-#15 2.562   - Locking symfony/polyfill-php86 (v1.43.0)
-#15 2.562   - Locking symfony/process (v7.4.22)
-#15 2.562   - Locking symfony/psr-http-message-bridge (v7.4.21)
-#15 2.562   - Locking symfony/routing (v7.4.23)
-#15 2.562   - Locking symfony/runtime (v7.4.23)
-#15 2.562   - Locking symfony/serializer (v7.4.23)
-#15 2.562   - Locking symfony/service-contracts (v3.7.3)
-#15 2.563   - Locking symfony/string (v7.4.22)
-#15 2.563   - Locking symfony/translation-contracts (v3.7.1)
-#15 2.563   - Locking symfony/validator (v7.4.23)
-#15 2.563   - Locking symfony/var-dumper (v7.4.22)
-#15 2.563   - Locking symfony/var-exporter (v7.4.22)
-#15 2.563   - Locking symfony/yaml (v7.4.23)
-#15 2.563   - Locking twig/html-extra (v3.29.0)
-#15 2.563   - Locking twig/twig (v3.30.0)
-#15 2.565 Writing lock file
-#15 2.565 Installing dependencies from lock file
-#15 2.567 Package operations: 93 installs, 0 updates, 0 removals
-#15 2.568   - Downloading composer/installers (v2.3.0)
-#15 2.569   - Downloading drupal/core-composer-scaffold (11.4.13)
-#15 2.569   - Downloading drupal/core-project-message (11.4.13)
-#15 2.569   - Downloading symfony/runtime (v7.4.23)
-#15 2.569   - Downloading symfony/polyfill-iconv (v1.43.0)
-#15 2.569   - Downloading symfony/polyfill-mbstring (v1.43.3)
-#15 2.569   - Downloading symfony/polyfill-intl-normalizer (v1.43.0)
-#15 2.569   - Downloading symfony/polyfill-intl-grapheme (v1.43.3)
-#15 2.569   - Downloading symfony/polyfill-ctype (v1.37.0)
-#15 2.570   - Downloading symfony/deprecation-contracts (v3.7.1)
-#15 2.570   - Downloading symfony/string (v7.4.22)
-#15 2.570   - Downloading psr/container (2.0.2)
-#15 2.570   - Downloading symfony/service-contracts (v3.7.3)
-#15 2.570   - Downloading symfony/console (v7.4.23)
-#15 2.570   - Downloading psr/log (3.0.2)
-#15 2.570   - Downloading consolidation/log (3.1.3)
-#15 2.570   - Downloading symfony/filesystem (v7.4.23)
-#15 2.570   - Downloading symfony/var-exporter (v7.4.22)
-#15 2.571   - Downloading psr/cache (3.0.0)
-#15 2.571   - Downloading symfony/cache-contracts (v3.8.1)
-#15 2.571   - Downloading symfony/cache (v7.4.23)
-#15 2.571   - Downloading symfony/polyfill-php80 (v1.43.0)
-#15 2.571   - Downloading ralouphie/getallheaders (3.0.3)
-#15 2.571   - Downloading psr/http-message (2.0)
-#15 2.571   - Downloading psr/http-factory (1.1.0)
-#15 2.571   - Downloading guzzlehttp/psr7 (2.13.5)
-#15 2.571   - Downloading guzzlehttp/promises (2.6.1)
-#15 2.571   - Downloading psr/http-client (1.0.3)
-#15 2.572   - Downloading guzzlehttp/guzzle (7.16.4)
-#15 2.572   - Downloading kevinrob/guzzle-cache-middleware (6.0.0)
-#15 2.572   - Downloading composer/semver (3.4.4)
-#15 2.572   - Downloading consolidation/self-update (3.2.1)
-#15 2.572   - Downloading symfony/yaml (v7.4.23)
-#15 2.572   - Downloading symfony/var-dumper (v7.4.22)
-#15 2.572   - Downloading symfony/translation-contracts (v3.7.1)
-#15 2.572   - Downloading symfony/polyfill-php83 (v1.43.0)
-#15 2.572   - Downloading symfony/validator (v7.4.23)
-#15 2.572   - Downloading symfony/polyfill-php84 (v1.43.0)
-#15 2.573   - Downloading symfony/serializer (v7.4.23)
-#15 2.573   - Downloading symfony/routing (v7.4.23)
-#15 2.573   - Downloading symfony/http-foundation (v7.4.23)
-#15 2.573   - Downloading symfony/psr-http-message-bridge (v7.4.21)
-#15 2.573   - Downloading symfony/process (v7.4.22)
-#15 2.573   - Downloading symfony/polyfill-intl-idn (v1.43.0)
-#15 2.573   - Downloading symfony/mime (v7.4.22)
-#15 2.573   - Downloading psr/event-dispatcher (1.0.0)
-#15 2.573   - Downloading symfony/event-dispatcher-contracts (v3.7.1)
-#15 2.573   - Downloading symfony/event-dispatcher (v7.4.17)
-#15 2.573   - Downloading doctrine/lexer (3.0.3)
-#15 2.573   - Downloading egulias/email-validator (4.0.4)
-#15 2.574   - Downloading symfony/mailer (v7.4.22)
-#15 2.574   - Downloading symfony/polyfill-php85 (v1.44.0)
-#15 2.574   - Downloading symfony/error-handler (v7.4.22)
-#15 2.574   - Downloading symfony/http-kernel (v7.4.23)
-#15 2.574   - Downloading symfony/finder (v7.4.23)
-#15 2.574   - Downloading symfony/dependency-injection (v7.4.23)
-#15 2.574   - Downloading revolt/event-loop (v1.0.9)
-#15 2.574   - Downloading php-tuf/composer-stager (v2.1.1)
-#15 2.574   - Downloading pear/pear_exception (v1.0.2)
-#15 2.575   - Downloading pear/console_getopt (v1.4.3)
-#15 2.575   - Downloading pear/pear-core-minimal (v1.10.18)
-#15 2.575   - Downloading pear/archive_tar (1.6.1)
-#15 2.575   - Downloading mck89/peast (v1.17.7)
-#15 2.575   - Downloading masterminds/html5 (2.12.0)
-#15 2.575   - Downloading marc-mabe/php-enum (v4.7.2)
-#15 2.575   - Downloading justinrainbow/json-schema (6.8.2)
-#15 2.575   - Downloading twig/twig (v3.30.0)
-#15 2.575   - Downloading twig/html-extra (v3.29.0)
-#15 2.576   - Downloading symfony/polyfill-php86 (v1.43.0)
-#15 2.576   - Downloading sebastian/diff (7.0.1)
-#15 2.576   - Downloading asm89/stack-cors (v2.4.0)
-#15 2.576   - Downloading drupal/core (11.4.13)
-#15 2.576   - Downloading nikic/php-parser (v5.9.0)
-#15 2.576   - Downloading psy/psysh (v0.12.24)
-#15 2.576   - Downloading league/container (4.2.5)
-#15 2.576   - Downloading laravel/prompts (v0.3.27)
-#15 2.577   - Downloading dflydev/dot-access-data (v3.0.3)
-#15 2.577   - Downloading grasmash/yaml-cli (3.2.1)
-#15 2.577   - Downloading grasmash/expander (3.0.1)
-#15 2.577   - Downloading consolidation/config (3.2.2)
-#15 2.577   - Downloading consolidation/site-alias (4.1.3)
-#15 2.577   - Downloading consolidation/site-process (6.1.0)
-#15 2.577   - Downloading symfony/polyfill-php81 (v1.38.1)
-#15 2.577   - Downloading phootwork/lang (v3.2.3)
-#15 2.577   - Downloading phootwork/collection (v3.2.3)
-#15 2.577   - Downloading phpowermove/docblock (v4.0)
-#15 2.578   - Downloading consolidation/output-formatters (4.7.2)
-#15 2.578   - Downloading consolidation/annotated-command (4.10.6)
-#15 2.578   - Downloading consolidation/robo (5.2.4)
-#15 2.578   - Downloading consolidation/filter-via-dot-access-data (2.0.3)
-#15 2.578   - Downloading chi-teck/drupal-code-generator (4.2.0)
-#15 2.578   - Downloading drush/drush (13.8.1)
-#15 2.582   0/92 [>---------------------------]   0%
-#15 2.996  20/92 [======>---------------------]  21%
-#15 3.096  35/92 [==========>-----------------]  38%
-#15 3.206  49/92 [==============>-------------]  53%
-#15 3.307  61/92 [==================>---------]  66%
-#15 3.408  71/92 [=====================>------]  77%
-#15 3.634  78/92 [=======================>----]  84%
-#15 3.847  85/92 [=========================>--]  92%
-#15 4.888  91/92 [===========================>]  98%
-#15 5.309  92/92 [============================] 100%
-#15 5.310   - Installing composer/installers (v2.3.0): Extracting archive
-#15 5.327   - Installing drupal/core-composer-scaffold (11.4.13): Extracting archive
-#15 5.333   - Installing drupal/core-project-message (11.4.13): Extracting archive
-#15 5.335   - Installing symfony/runtime (v7.4.23): Extracting archive
-#15 5.339   - Installing symfony/polyfill-iconv (v1.43.0): Extracting archive
-#15 5.339   - Installing symfony/polyfill-mbstring (v1.43.3): Extracting archive
-#15 5.339   - Installing symfony/polyfill-intl-normalizer (v1.43.0): Extracting archive
-#15 5.339   - Installing symfony/polyfill-intl-grapheme (v1.43.3): Extracting archive
-#15 5.340   - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
-#15 5.341   - Installing symfony/deprecation-contracts (v3.7.1): Extracting archive
-#15 5.341   - Installing symfony/string (v7.4.22): Extracting archive
-#15 5.342   - Installing psr/container (2.0.2): Extracting archive
-#15 5.342   - Installing symfony/service-contracts (v3.7.3): Extracting archive
-#15 5.343   - Installing symfony/console (v7.4.23): Extracting archive
-#15 5.343   - Installing psr/log (3.0.2): Extracting archive
-#15 5.343   - Installing consolidation/log (3.1.3): Extracting archive
-#15 5.344   - Installing symfony/filesystem (v7.4.23): Extracting archive
-#15 5.344   - Installing symfony/var-exporter (v7.4.22): Extracting archive
-#15 5.344   - Installing psr/cache (3.0.0): Extracting archive
-#15 5.344   - Installing symfony/cache-contracts (v3.8.1): Extracting archive
-#15 5.344   - Installing symfony/cache (v7.4.23): Extracting archive
-#15 5.345   - Installing symfony/polyfill-php80 (v1.43.0): Extracting archive
-#15 5.345   - Installing ralouphie/getallheaders (3.0.3): Extracting archive
-#15 5.345   - Installing psr/http-message (2.0): Extracting archive
-#15 5.345   - Installing psr/http-factory (1.1.0): Extracting archive
-#15 5.345   - Installing guzzlehttp/psr7 (2.13.5): Extracting archive
-#15 5.346   - Installing guzzlehttp/promises (2.6.1): Extracting archive
-#15 5.346   - Installing psr/http-client (1.0.3): Extracting archive
-#15 5.346   - Installing guzzlehttp/guzzle (7.16.4): Extracting archive
-#15 5.346   - Installing kevinrob/guzzle-cache-middleware (6.0.0): Extracting archive
-#15 5.346   - Installing composer/semver (3.4.4): Extracting archive
-#15 5.346   - Installing consolidation/self-update (3.2.1): Extracting archive
-#15 5.347   - Installing symfony/yaml (v7.4.23): Extracting archive
-#15 5.347   - Installing symfony/var-dumper (v7.4.22): Extracting archive
-#15 5.347   - Installing symfony/translation-contracts (v3.7.1): Extracting archive
-#15 5.347   - Installing symfony/polyfill-php83 (v1.43.0): Extracting archive
-#15 5.347   - Installing symfony/validator (v7.4.23): Extracting archive
-#15 5.347   - Installing symfony/polyfill-php84 (v1.43.0): Extracting archive
-#15 5.347   - Installing symfony/serializer (v7.4.23): Extracting archive
-#15 5.348   - Installing symfony/routing (v7.4.23): Extracting archive
-#15 5.348   - Installing symfony/http-foundation (v7.4.23): Extracting archive
-#15 5.348   - Installing symfony/psr-http-message-bridge (v7.4.21): Extracting archive
-#15 5.348   - Installing symfony/process (v7.4.22): Extracting archive
-#15 5.348   - Installing symfony/polyfill-intl-idn (v1.43.0): Extracting archive
-#15 5.348   - Installing symfony/mime (v7.4.22): Extracting archive
-#15 5.349   - Installing psr/event-dispatcher (1.0.0): Extracting archive
-#15 5.349   - Installing symfony/event-dispatcher-contracts (v3.7.1): Extracting archive
-#15 5.349   - Installing symfony/event-dispatcher (v7.4.17): Extracting archive
-#15 5.349   - Installing doctrine/lexer (3.0.3): Extracting archive
-#15 5.349   - Installing egulias/email-validator (4.0.4): Extracting archive
-#15 5.349   - Installing symfony/mailer (v7.4.22): Extracting archive
-#15 5.349   - Installing symfony/polyfill-php85 (v1.44.0): Extracting archive
-#15 5.350   - Installing symfony/error-handler (v7.4.22): Extracting archive
-#15 5.350   - Installing symfony/http-kernel (v7.4.23): Extracting archive
-#15 5.350   - Installing symfony/finder (v7.4.23): Extracting archive
-#15 5.350   - Installing symfony/dependency-injection (v7.4.23): Extracting archive
-#15 5.350   - Installing revolt/event-loop (v1.0.9): Extracting archive
-#15 5.350   - Installing php-tuf/composer-stager (v2.1.1): Extracting archive
-#15 5.351   - Installing pear/pear_exception (v1.0.2): Extracting archive
-#15 5.351   - Installing pear/console_getopt (v1.4.3): Extracting archive
-#15 5.351   - Installing pear/pear-core-minimal (v1.10.18): Extracting archive
-#15 5.351   - Installing pear/archive_tar (1.6.1): Extracting archive
-#15 5.351   - Installing mck89/peast (v1.17.7): Extracting archive
-#15 5.351   - Installing masterminds/html5 (2.12.0): Extracting archive
-#15 5.351   - Installing marc-mabe/php-enum (v4.7.2): Extracting archive
-#15 5.351   - Installing justinrainbow/json-schema (6.8.2): Extracting archive
-#15 5.351   - Installing twig/twig (v3.30.0): Extracting archive
-#15 5.352   - Installing twig/html-extra (v3.29.0): Extracting archive
-#15 5.352   - Installing symfony/polyfill-php86 (v1.43.0): Extracting archive
-#15 5.352   - Installing sebastian/diff (7.0.1): Extracting archive
-#15 5.352   - Installing asm89/stack-cors (v2.4.0): Extracting archive
-#15 5.352   - Installing drupal/core (11.4.13): Extracting archive
-#15 5.353   - Installing drupal/core-recommended (11.4.13)
-#15 5.353   - Installing nikic/php-parser (v5.9.0): Extracting archive
-#15 5.353   - Installing psy/psysh (v0.12.24): Extracting archive
-#15 5.353   - Installing league/container (4.2.5): Extracting archive
-#15 5.353   - Installing laravel/prompts (v0.3.27): Extracting archive
-#15 5.354   - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
-#15 5.354   - Installing grasmash/yaml-cli (3.2.1): Extracting archive
-#15 5.354   - Installing grasmash/expander (3.0.1): Extracting archive
-#15 5.354   - Installing consolidation/config (3.2.2): Extracting archive
-#15 5.354   - Installing consolidation/site-alias (4.1.3): Extracting archive
-#15 5.354   - Installing consolidation/site-process (6.1.0): Extracting archive
-#15 5.355   - Installing symfony/polyfill-php81 (v1.38.1): Extracting archive
-#15 5.355   - Installing phootwork/lang (v3.2.3): Extracting archive
-#15 5.355   - Installing phootwork/collection (v3.2.3): Extracting archive
-#15 5.355   - Installing phpowermove/docblock (v4.0): Extracting archive
-#15 5.355   - Installing consolidation/output-formatters (4.7.2): Extracting archive
-#15 5.355   - Installing consolidation/annotated-command (4.10.6): Extracting archive
-#15 5.355   - Installing consolidation/robo (5.2.4): Extracting archive
-#15 5.355   - Installing consolidation/filter-via-dot-access-data (2.0.3): Extracting archive
-#15 5.355   - Installing chi-teck/drupal-code-generator (4.2.0): Extracting archive
-#15 5.355   - Installing drush/drush (13.8.1): Extracting archive
-#15 5.358   0/88 [>---------------------------]   0%
-#15 5.467  70/88 [======================>-----]  79%
-#15 5.567  87/88 [===========================>]  98%
-#15 6.489  88/88 [============================] 100%
-#15 6.830 14 package suggestions were added by new dependencies, use `composer suggest` to see details.
-#15 6.832 Generating optimized autoload files
-#15 7.268 51 packages you are using are looking for funding.
-#15 7.268 Use the `composer fund` command to find out more!
-#15 7.272 Scaffolding files for drupal/core:
-#15 7.272   - Copy [web-root]/.htaccess from assets/scaffold/files/htaccess
-#15 7.272   - Copy [web-root]/README.md from assets/scaffold/files/drupal.README.md
-#15 7.272   - Copy [web-root]/index.php from assets/scaffold/files/index.php
-#15 7.272   - Copy [web-root]/.csslintrc from assets/scaffold/files/csslintrc
-#15 7.272   - Copy [web-root]/robots.txt from assets/scaffold/files/robots.txt
-#15 7.272   - Copy [web-root]/update.php from assets/scaffold/files/update.php
-#15 7.272   - Copy [web-root]/INSTALL.txt from assets/scaffold/files/drupal.INSTALL.txt
-#15 7.272   - Copy [web-root]/.eslintignore from assets/scaffold/files/eslintignore
-#15 7.272   - Copy [web-root]/.eslintrc.json from assets/scaffold/files/eslintrc.json
-#15 7.272   - Copy [web-root]/.ht.router.php from assets/scaffold/files/ht.router.php
-#15 7.272   - Copy [web-root]/sites/README.txt from assets/scaffold/files/sites.README.txt
-#15 7.272   - Copy [project-root]/.editorconfig from assets/scaffold/files/editorconfig
-#15 7.272   - Copy [web-root]/example.gitignore from assets/scaffold/files/example.gitignore
-#15 7.272   - Copy [web-root]/themes/README.txt from assets/scaffold/files/themes.README.txt
-#15 7.272   - Copy [project-root]/.gitattributes from assets/scaffold/files/gitattributes
-#15 7.272   - Copy [web-root]/modules/README.txt from assets/scaffold/files/modules.README.txt
-#15 7.273   - Copy [web-root]/profiles/README.txt from assets/scaffold/files/profiles.README.txt
-#15 7.274   - Copy [project-root]/recipes/README.txt from assets/scaffold/files/recipes.README.txt
-#15 7.274   - Copy [web-root]/sites/example.sites.php from assets/scaffold/files/example.sites.php
-#15 7.274   - Copy [web-root]/sites/development.services.yml from assets/scaffold/files/development.services.yml
-#15 7.274   - Copy [web-root]/sites/example.settings.local.php from assets/scaffold/files/example.settings.local.php
-#15 7.274   - Copy [web-root]/sites/default/default.services.yml from assets/scaffold/files/default.services.yml
-#15 7.274   - Copy [web-root]/sites/default/default.settings.php from assets/scaffold/files/default.settings.php
-#15 DONE 7.6s
+#15 [web vendor  5/10] COPY web/sites/default/settings.php web/sites/default/
+#15 CACHED
 
-#16 [stage-1  9/15] COPY web/sites/sites.php web/sites/sites.php
-#16 DONE 0.1s
+#16 [web php-base 3/5] COPY --chmod=644 docker/php/drupal.ini /usr/local/etc/php/conf.d/zz-drupal.ini
+#16 CACHED
 
-#17 [stage-1 10/15] COPY web/sites/default/settings.php web/sites/default/settings.php
-#17 DONE 0.0s
+#17 [web php-base 5/5] WORKDIR /var/www/html
+#17 CACHED
 
-#18 [stage-1 11/15] COPY web/sites/site_a/settings.php web/sites/site_a/settings.php
-#18 DONE 0.0s
+#18 [web vendor  2/10] COPY composer.json composer.lock ./
+#18 CACHED
 
-#19 [stage-1 12/15] COPY web/sites/site_b/settings.php web/sites/site_b/settings.php
-#19 DONE 0.0s
+#19 [web vendor  3/10] RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-progress --no-interaction
+#19 CACHED
 
-#20 [stage-1 13/15] COPY scripts/ scripts/
-#20 DONE 0.0s
+#20 [web php-base 4/5] COPY --chmod=644 docker/php/zz-env.conf /usr/local/etc/php-fpm.d/zz-env.conf
+#20 CACHED
 
-#21 [stage-1 14/15] COPY config/ config/
-#21 DONE 0.0s
+#21 [web vendor  4/10] COPY web/sites/sites.php web/sites/settings.shared.php web/sites/
+#21 CACHED
 
-#22 [stage-1 15/15] RUN mkdir -p web/sites/site_a/files web/sites/site_b/files     && chown -R www-data:www-data web/sites/site_a/files web/sites/site_b/files
-#22 DONE 0.1s
+#22 [web vendor  1/10] COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+#22 CACHED
 
-#23 exporting to image
-#23 exporting layers
-#23 exporting layers 2.5s done
-#23 exporting manifest sha256:bdcdffc6a84b2e22cc352d666056a1412b550db2dfeb1723f002e6a2ce08ba80 done
-#23 exporting config sha256:141403068b946950a1dbdcffb31b0db8d64158e39af8ffc7cf9a56ab2decbf2b done
-#23 exporting attestation manifest sha256:842916c29f81f87bf705caae9d59a61eaaca6c0b401c3ece5e1cf8f3ca36a94f done
-#23 exporting manifest list sha256:c6591c61163c1ae50a5879e9376154155139a7bdbaef2ad7176e9a3ad3a416bb done
-#23 naming to docker.io/library/drupal-multisite-eks-demo-app:latest done
-#23 unpacking to docker.io/library/drupal-multisite-eks-demo-app:latest
-#23 unpacking to docker.io/library/drupal-multisite-eks-demo-app:latest 1.5s done
-#23 DONE 4.1s
+#23 [app vendor  7/10] COPY web/sites/site_b/settings.php web/sites/site_b/
+#23 CACHED
 
-#24 resolving provenance for metadata file
-#24 DONE 0.0s
- Image drupal-multisite-eks-demo-app Built 
+#24 [app vendor  1/10] COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+#24 CACHED
+
+#25 [app vendor  2/10] COPY composer.json composer.lock ./
+#25 CACHED
+
+#26 [app php-base 4/5] COPY --chmod=644 docker/php/zz-env.conf /usr/local/etc/php-fpm.d/zz-env.conf
+#26 CACHED
+
+#27 [app vendor  5/10] COPY web/sites/default/settings.php web/sites/default/
+#27 CACHED
+
+#28 [app vendor  3/10] RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-progress --no-interaction
+#28 CACHED
+
+#29 [app vendor  6/10] COPY web/sites/site_a/settings.php web/sites/site_a/
+#29 CACHED
+
+#30 [app php-base 5/5] WORKDIR /var/www/html
+#30 CACHED
+
+#31 [app php-base 3/5] COPY --chmod=644 docker/php/drupal.ini /usr/local/etc/php/conf.d/zz-drupal.ini
+#31 CACHED
+
+#32 [app vendor  4/10] COPY web/sites/sites.php web/sites/settings.shared.php web/sites/
+#32 CACHED
+
+#33 [app php-base 2/5] RUN apk add --no-cache bash mariadb-client icu-libs libpng libjpeg-turbo freetype libzip  && apk add --no-cache --virtual .build autoconf 		dpkg-dev dpkg 		file 		g++ 		gcc 		libc-dev 		make 		pkgconf 		re2c icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev  && docker-php-ext-configure gd --with-freetype --with-jpeg  && docker-php-ext-install -j"$(nproc)" pdo_mysql gd opcache intl zip  && pecl install apcu redis  && docker-php-ext-enable apcu redis  && apk del .build  && cp "/usr/local/etc/php/php.ini-production" "/usr/local/etc/php/php.ini"
+#33 CACHED
+
+#34 [app vendor  7/10] COPY web/sites/site_b/settings.php web/sites/site_b/
+#34 CACHED
+
+#35 [app vendor  8/10] COPY config/ config/
+#35 DONE 0.0s
+
+#36 [web vendor  8/10] COPY config/ config/
+#36 DONE 0.0s
+
+#37 [app vendor  9/10] COPY scripts/ scripts/
+#37 DONE 0.0s
+
+#38 [web vendor  9/10] COPY scripts/ scripts/
+#38 DONE 0.0s
+
+#39 [app vendor 10/10] RUN composer install --no-dev --optimize-autoloader --no-progress --no-interaction  && find web/sites config scripts -type d -exec chmod 755 {} +  && find web/sites config scripts -type f -exec chmod 644 {} +  && chmod 755 scripts/*.sh  && mkdir -p web/sites/site_a/files web/sites/site_b/files
+#39 0.232 Installing dependencies from lock file
+#39 0.233 Verifying lock file contents can be installed on current platform.
+#39 0.875 Nothing to install, update or remove
+#39 0.881 Generating optimized autoload files
+#39 1.800 51 packages you are using are looking for funding.
+#39 1.800 Use the `composer fund` command to find out more!
+#39 ...
+
+#40 [web vendor 10/10] RUN composer install --no-dev --optimize-autoloader --no-progress --no-interaction  && find web/sites config scripts -type d -exec chmod 755 {} +  && find web/sites config scripts -type f -exec chmod 644 {} +  && chmod 755 scripts/*.sh  && mkdir -p web/sites/site_a/files web/sites/site_b/files
+#40 0.231 Installing dependencies from lock file
+#40 0.232 Verifying lock file contents can be installed on current platform.
+#40 0.853 Nothing to install, update or remove
+#40 0.860 Generating optimized autoload files
+#40 1.800 51 packages you are using are looking for funding.
+#40 1.800 Use the `composer fund` command to find out more!
+#40 DONE 2.2s
+
+#39 [app vendor 10/10] RUN composer install --no-dev --optimize-autoloader --no-progress --no-interaction  && find web/sites config scripts -type d -exec chmod 755 {} +  && find web/sites config scripts -type f -exec chmod 644 {} +  && chmod 755 scripts/*.sh  && mkdir -p web/sites/site_a/files web/sites/site_b/files
+#39 DONE 2.2s
+
+#17 [app php-base 5/5] WORKDIR /var/www/html
+#17 CACHED
+
+#41 [app app 1/2] COPY --from=vendor /var/www/html /var/www/html
+#41 ...
+
+#17 [web php-base 5/5] WORKDIR /var/www/html
+#17 CACHED
+
+#42 [web web 2/3] COPY --chmod=644 docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+#42 CACHED
+
+#43 [web web 3/3] COPY --from=vendor /var/www/html/web /var/www/html/web
+#43 CACHED
+
+#44 [web] exporting to image
+#44 exporting layers done
+#44 exporting manifest sha256:02b795d563b60dfa3483bae541aee3068f17e938434b4f2516293f381db9c563 done
+#44 exporting config sha256:1a84e597550c882a090158ccf7495fc212eef843c6daf5b75f30c54422f2d50e done
+#44 exporting attestation manifest sha256:707770e5745909e08e5863f64fb2ed8ecce00b2f17b20f0056ca414aff04ea6e done
+#44 exporting manifest list sha256:4f0eaf7b19f58dafabf83c310381d5d2e343fd0c2f9a7e35c6e3915b6e663eab done
+#44 naming to docker.io/library/drupal-multisite:web-local done
+#44 unpacking to docker.io/library/drupal-multisite:web-local done
+#44 DONE 0.0s
+
+#45 [web] resolving provenance for metadata file
+#45 DONE 0.0s
+
+#41 [app app 1/2] COPY --from=vendor /var/www/html /var/www/html
+#41 DONE 1.4s
+
+#46 [app app 2/2] RUN mkdir -p /mnt/private/site_a /mnt/private/site_b  && chown -R 82:82 web/sites/site_a/files web/sites/site_b/files /mnt/private
+#46 DONE 0.2s
+
+#47 [app] exporting to image
+#47 exporting layers 2.1s done
+#47 exporting manifest sha256:48c85d2bae19e036263ef12b0e8084ce7a3bc6097039da380f9c59e610c90d27
+#47 exporting manifest sha256:48c85d2bae19e036263ef12b0e8084ce7a3bc6097039da380f9c59e610c90d27 done
+#47 exporting config sha256:97c0c9ebe1f5fcb189900c56a98319fe9a230011da93015b318d805d45d5c88f done
+#47 exporting attestation manifest sha256:351e6fac86816d732a14baa9f61398c6671e1096621b722f1bd6e6f050131884 done
+#47 exporting manifest list sha256:a1c48b0acfd21b3272f1c59a8d5294a8ccbf5224588069ba14a563acd21cf889 done
+#47 naming to docker.io/library/drupal-multisite:app-local done
+#47 unpacking to docker.io/library/drupal-multisite:app-local
+#47 unpacking to docker.io/library/drupal-multisite:app-local 1.6s done
+#47 DONE 3.7s
+
+#48 [app] resolving provenance for metadata file
+#48 DONE 0.0s
+ Image drupal-multisite:app-local Built 
+ Image drupal-multisite:web-local Built 
  Network drupal-multisite-eks-demo_default Creating 
  Network drupal-multisite-eks-demo_default Created 
+ Volume drupal-multisite-eks-demo_private Creating 
+ Volume drupal-multisite-eks-demo_private Created 
+ Volume drupal-multisite-eks-demo_files_site_a Creating 
+ Volume drupal-multisite-eks-demo_files_site_a Created 
+ Volume drupal-multisite-eks-demo_files_site_b Creating 
+ Volume drupal-multisite-eks-demo_files_site_b Created 
  Volume drupal-multisite-eks-demo_dbdata Creating 
  Volume drupal-multisite-eks-demo_dbdata Created 
  Container drupal-multisite-eks-demo-db-1 Creating 
  Container drupal-multisite-eks-demo-db-1 Created 
  Container drupal-multisite-eks-demo-app-1 Creating 
  Container drupal-multisite-eks-demo-app-1 Created 
+ Container drupal-multisite-eks-demo-web-1 Creating 
+ Container drupal-multisite-eks-demo-web-1 Created 
  Container drupal-multisite-eks-demo-db-1 Starting 
  Container drupal-multisite-eks-demo-db-1 Started 
  Container drupal-multisite-eks-demo-db-1 Waiting 
  Container drupal-multisite-eks-demo-db-1 Healthy 
  Container drupal-multisite-eks-demo-app-1 Starting 
  Container drupal-multisite-eks-demo-app-1 Started 
- Container drupal-multisite-eks-demo-db-1 Waiting 
  Container drupal-multisite-eks-demo-app-1 Waiting 
- Container drupal-multisite-eks-demo-db-1 Healthy 
  Container drupal-multisite-eks-demo-app-1 Healthy 
-NAME                              IMAGE                           COMMAND                  SERVICE   CREATED          STATUS                    PORTS
-drupal-multisite-eks-demo-app-1   drupal-multisite-eks-demo-app   "docker-php-entrypoi…"   app       11 seconds ago   Up Less than a second     0.0.0.0:8080->80/tcp, [::]:8080->80/tcp
-drupal-multisite-eks-demo-db-1    mariadb:11.4                    "docker-entrypoint.s…"   db        11 seconds ago   Up 11 seconds (healthy)   3306/tcp
+ Container drupal-multisite-eks-demo-web-1 Starting 
+ Container drupal-multisite-eks-demo-web-1 Started 
+ Container drupal-multisite-eks-demo-app-1 Waiting 
+ Container drupal-multisite-eks-demo-web-1 Waiting 
+ Container drupal-multisite-eks-demo-db-1 Waiting 
+ Container drupal-multisite-eks-demo-app-1 Healthy 
+ Container drupal-multisite-eks-demo-db-1 Healthy 
+ Container drupal-multisite-eks-demo-web-1 Healthy 
+NAME                              IMAGE                        COMMAND                  SERVICE   CREATED          STATUS                    PORTS
+drupal-multisite-eks-demo-app-1   drupal-multisite:app-local   "docker-php-entrypoi…"   app       17 seconds ago   Up 11 seconds (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+drupal-multisite-eks-demo-db-1    mariadb:11.4                 "docker-entrypoint.s…"   db        17 seconds ago   Up 16 seconds (healthy)   3306/tcp
+drupal-multisite-eks-demo-web-1   drupal-multisite:web-local   "/docker-entrypoint.…"   web       17 seconds ago   Up 5 seconds (healthy)    
+app uid: 82  web uid: 101
 
-=== Install both sites
+=== Install both sites from the committed configuration
  [success] Installation complete. (Admin)
- [success] Successfully uninstalled: automated_cron
  [success] Installation complete. (Admin)
- [success] Successfully uninstalled: automated_cron
 
 === Separate databases
 site_a -> database site_a
 site_b -> database site_b
 A config change on site_a is not visible on site_b
 
+=== Content is per site: an article created on site_a is served only by site_a
+site_a content types: article,page
+site_b content types: article,page
+site-a.localhost/node/1 -> 200
+site-b.localhost/node/1 -> 404
+
 === Config sync directory is outside public files
 site_a config_sync_directory=../config/site_a/sync
 site_b config_sync_directory=../config/site_b/sync
 
-=== HTTP routing by hostname
-site-a.localhost -> 200 Welcome! | Demo site_a
+=== HTTP routing by hostname (nginx -> PHP-FPM)
+site-a.localhost -> 200 Home | Demo site_a
 site-b.localhost -> 200 Welcome! | Demo site_b
 unknown.example.net/ -> 404
 unknown.example.net/core/install.php -> 404
 
+=== nginx hardening
+/healthz -> 200 (want 200)
+/.htaccess -> 403 (want 403)
+/core/core.services.yml -> 403 (want 403)
+/sites/site_a/settings.php -> 404 (want 404)
+/core/lib/Drupal.php -> 404 (want 404)
+/sites/site_a/private/x.txt -> 403 (want 403)
+
+=== Public files written by PHP-FPM, served by nginx
+/sites/site_a/files/css/css_6fsVNPKtC0BSaIovjY2tu0zwJlhILnGRpIJACr1UYMM.css -> 200
+
+=== Private files directory
+site_a private:// -> /mnt/private/site_a writable
+site_b private:// -> /mnt/private/site_b writable
+
 === Cron
-site_a system.cron_last=1795208993
-site_b system.cron_last=1795208993
+site_a system.cron_last=1795217802
+site_b system.cron_last=1795217803
+
+=== drush deploy per site (no pending changes, so a clean no-op)
+>  [success] Warmed caches.
+>  [success] Warmed caches.
 
 COMPOSE SMOKE TEST PASSED

@@ -3,7 +3,12 @@
   "description": "Drupal multisite reference implementation independent of Acquia BLT",
   "type": "project",
   "license": "GPL-2.0-or-later",
-  "repositories": [{"type": "composer", "url": "https://packages.drupal.org/8"}],
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    }
+  ],
   "require": {
     "php": "^8.3",
     "composer/installers": "^2.3",
@@ -23,17 +28,36 @@
       "symfony/runtime": true,
       "tbachert/spi": false
     },
-    "sort-packages": true
+    "sort-packages": true,
+    "platform": {
+      "php": "8.3.0"
+    }
   },
   "extra": {
-    "drupal-scaffold": {"locations": {"web-root": "web/"}},
+    "drupal-scaffold": {
+      "locations": {
+        "web-root": "web/"
+      }
+    },
     "installer-paths": {
-      "web/core": ["type:drupal-core"],
-      "web/libraries/{$name}": ["type:drupal-library"],
-      "web/modules/contrib/{$name}": ["type:drupal-module"],
-      "web/profiles/contrib/{$name}": ["type:drupal-profile"],
-      "web/themes/contrib/{$name}": ["type:drupal-theme"],
-      "drush/Commands/contrib/{$name}": ["type:drupal-drush"]
+      "web/core": [
+        "type:drupal-core"
+      ],
+      "web/libraries/{$name}": [
+        "type:drupal-library"
+      ],
+      "web/modules/contrib/{$name}": [
+        "type:drupal-module"
+      ],
+      "web/profiles/contrib/{$name}": [
+        "type:drupal-profile"
+      ],
+      "web/themes/contrib/{$name}": [
+        "type:drupal-theme"
+      ],
+      "drush/Commands/contrib/{$name}": [
+        "type:drupal-drush"
+      ]
     }
   }
 }

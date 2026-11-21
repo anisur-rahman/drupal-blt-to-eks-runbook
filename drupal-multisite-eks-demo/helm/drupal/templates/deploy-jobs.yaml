@@ -1,0 +1,45 @@
+{{- /*
+Runbook Phase 15/16: `drush deploy` (updatedb, config:import, cache:rebuild, deploy:hook)
+once per site, never in every pod. Helm runs hooks of increasing weight one after another
+and waits for each Job, so sites deploy in order and a failure stops the release.
+*/ -}}
+{{- if .Values.deployJobs.enabled }}
+{{- range $i, $site := .Values.sites }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $.Release.Name }}-deploy-{{ $site.id | replace "_" "-" }}
+  annotations:
+    helm.sh/hook: post-upgrade
+    helm.sh/hook-weight: {{ $i | quote }}
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $.Values.deployJobs.timeoutSeconds }}
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {job: deploy, site: {{ $site.id | replace "_" "-" }}}
+    spec:
+      restartPolicy: Never
+      {{- include "drupal.podSecurity" $ | nindent 6 }}
+      containers:
+        - name: deploy
+          image: {{ include "drupal.image" (list $ "app") | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["drush", "--uri=https://{{ $site.host }}", "deploy", "-y"]
+          envFrom:
+            {{- include "drupal.envFrom" $ | nindent 12 }}
+          {{- include "drupal.containerSecurity" $ | nindent 10 }}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            {{- include "drupal.fileMounts" (list $ $site.id) | nindent 12 }}
+      volumes:
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ $.Values.persistence.existingClaim }}
+{{- end }}
+{{- end }}

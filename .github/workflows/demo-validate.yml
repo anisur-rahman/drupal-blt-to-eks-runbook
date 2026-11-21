@@ -39,6 +39,9 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
 
+      - name: Composer lock file matches composer.json
+        run: docker run --rm -v "$PWD:/app" -w /app composer:2 composer validate --no-check-publish
+
       - name: Site-to-database mapping validator
         run: |
           tests/site-databases/run.sh
@@ -81,16 +84,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image
-        run: docker build -t drupal-multisite:ci .
+      - name: Build app (PHP-FPM) and web (nginx) images
+        run: |
+          docker build --target app -t drupal-multisite:app-ci .
+          docker build --target web -t drupal-multisite:web-ci .
 
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: smoke
 
-      - name: Load image into kind
-        run: kind load docker-image drupal-multisite:ci --name smoke
+      - name: Load images into kind
+        run: kind load docker-image drupal-multisite:app-ci drupal-multisite:web-ci --name smoke
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -98,13 +103,16 @@ jobs:
       - name: Deploy chart and test
         run: tests/k8s/smoke.sh 2>&1 | tee "$RUNNER_TEMP/k8s-smoke.log"
 
+      - name: Ingress and autoscaling
+        run: tests/k8s/scaling-ingress.sh 2>&1 | tee -a "$RUNNER_TEMP/k8s-smoke.log"
+
       - name: Diagnostics on failure
         if: failure()
         run: |
           kubectl -n drupal-smoke get all,pvc || true
           kubectl -n drupal-smoke get events --sort-by=.lastTimestamp || true
           kubectl -n drupal-smoke describe pods || true
-          kubectl -n drupal-smoke logs deploy/drupal --tail=200 || true
+          kubectl -n drupal-smoke logs deploy/drupal --all-containers --tail=200 || true
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -1,29 +1,56 @@
-FROM composer:2 AS composer-bin
+# syntax=docker/dockerfile:1
+# Runbook Phase 9: one Dockerfile, two images that run side by side in each pod.
+#   app  PHP-FPM 8.3 with the Drupal code (listens on 9000, runs as www-data UID 82)
+#   web  unprivileged nginx with the same web root (listens on 8080, runs as UID 101)
+# Build: docker build --target app -t drupal-multisite:app-dev .
+#        docker build --target web -t drupal-multisite:web-dev .
 
-FROM php:8.3-apache
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git unzip libicu-dev libzip-dev libpng-dev libjpeg-dev libfreetype6-dev libonig-dev default-mysql-client \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" pdo_mysql intl gd zip opcache \
-    && a2enmod rewrite headers \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=composer-bin /usr/bin/composer /usr/local/bin/composer
-# Production PHP defaults: errors are logged, never printed into pages.
-RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
-    # Drupal's .htaccess sets zend.assertions to 0 per request; -1 (the php.ini-production
-    # value) can't be changed at runtime and logs a warning on every request.
-    && printf 'zend.assertions = 0\n' > "$PHP_INI_DIR/conf.d/zz-drupal.ini"
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
-RUN sed -ri 's!/var/www/html!/var/www/html/web!g' /etc/apache2/sites-available/*.conf /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+# --- PHP runtime shared by the build stage and the app image -------------------------
+FROM php:8.3-fpm-alpine AS php-base
+RUN apk add --no-cache bash mariadb-client icu-libs libpng libjpeg-turbo freetype libzip \
+ && apk add --no-cache --virtual .build $PHPIZE_DEPS icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
+ && docker-php-ext-configure gd --with-freetype --with-jpeg \
+ && docker-php-ext-install -j"$(nproc)" pdo_mysql gd opcache intl zip \
+ && pecl install apcu redis \
+ && docker-php-ext-enable apcu redis \
+ && apk del .build \
+ && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+COPY --chmod=644 docker/php/drupal.ini "$PHP_INI_DIR/conf.d/zz-drupal.ini"
+# PHP-FPM clears the environment by default (clear_env = yes), which would hide every
+# DB_*, SITE_*_* and TRUSTED_PROXY_IPS variable from settings.shared.php.
+COPY --chmod=644 docker/php/zz-env.conf /usr/local/etc/php-fpm.d/zz-env.conf
 WORKDIR /var/www/html
-COPY composer.json ./
-RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-COPY web/sites/sites.php web/sites/sites.php
-COPY web/sites/default/settings.php web/sites/default/settings.php
-COPY web/sites/site_a/settings.php web/sites/site_a/settings.php
-COPY web/sites/site_b/settings.php web/sites/site_b/settings.php
-COPY scripts/ scripts/
+
+# --- Build: Composer dependencies, scaffold files and site settings ------------------
+FROM php-base AS vendor
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-progress --no-interaction
+COPY web/sites/sites.php web/sites/settings.shared.php web/sites/
+COPY web/sites/default/settings.php web/sites/default/
+COPY web/sites/site_a/settings.php web/sites/site_a/
+COPY web/sites/site_b/settings.php web/sites/site_b/
 COPY config/ config/
-RUN mkdir -p web/sites/site_a/files web/sites/site_b/files \
-    && chown -R www-data:www-data web/sites/site_a/files web/sites/site_b/files
-EXPOSE 80
+COPY scripts/ scripts/
+# A checkout on exFAT/NTFS or a Windows host arrives as 0700/0777. Code stays root-owned
+# and read-only to the web server; only the files directories are writable.
+RUN composer install --no-dev --optimize-autoloader --no-progress --no-interaction \
+ && find web/sites config scripts -type d -exec chmod 755 {} + \
+ && find web/sites config scripts -type f -exec chmod 644 {} + \
+ && chmod 755 scripts/*.sh \
+ && mkdir -p web/sites/site_a/files web/sites/site_b/files
+
+# --- app: PHP-FPM ---------------------------------------------------------------------
+FROM php-base AS app
+COPY --from=vendor /var/www/html /var/www/html
+RUN mkdir -p /mnt/private/site_a /mnt/private/site_b \
+ && chown -R 82:82 web/sites/site_a/files web/sites/site_b/files /mnt/private
+ENV PATH="/var/www/html/vendor/bin:${PATH}"
+USER 82:82
+EXPOSE 9000
+
+# --- web: nginx ------------------------------------------------------------------------
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS web
+COPY --chmod=644 docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=vendor /var/www/html/web /var/www/html/web
+EXPOSE 8080

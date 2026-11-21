@@ -1,0 +1,107 @@
+
+=== Namespace, secrets and test database (one user per site)
+namespace/drupal-smoke created
+secret/drupal-env created
+secret/db-root created
+configmap/db-init created
+deployment.apps/mariadb created
+service/mariadb created
+persistentvolumeclaim/drupal-files created
+Waiting for deployment "mariadb" rollout to finish: 0 of 1 updated replicas are available...
+deployment "mariadb" successfully rolled out
+
+=== Helm install
+NAME: drupal
+LAST DEPLOYED: Fri Nov 20 18:49:37 2026
+NAMESPACE: drupal-smoke
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+TEST SUITE: None
+NAME                      READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/drupal    1/1     1            1           6s
+deployment.apps/mariadb   1/1     1            1           11s
+
+NAME                           READY   STATUS    RESTARTS   AGE
+pod/drupal-9cb744d64-zd2k5     2/2     Running   0          6s
+pod/mariadb-76cdb676fd-gn5n8   1/1     Running   0          11s
+
+NAME              TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)    AGE
+service/drupal    ClusterIP   10.96.23.6    <none>        80/TCP     6s
+service/mariadb   ClusterIP   10.96.7.246   <none>        3306/TCP   11s
+
+NAME                                         REFERENCE           TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/drupal   Deployment/drupal   cpu: <unknown>/65%   1         3         1          6s
+
+NAME                                MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/drupal   1               N/A               0                     6s
+
+NAME                               SCHEDULE       TIMEZONE   SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob.batch/drupal-cron-site-a   */15 * * * *   <none>     False     0        <none>          6s
+cronjob.batch/drupal-cron-site-b   */15 * * * *   <none>     False     0        <none>          6s
+
+NAME                                 STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/drupal-files   Bound    pvc-ed758511-1612-4f46-8dc3-4f29b9b53187   1Gi        RWO            standard       <unset>                 11s
+
+NAME                         DATA   AGE
+configmap/db-init            1      11s
+configmap/drupal-config      8      6s
+configmap/kube-root-ca.crt   1      12s
+
+=== Pod runs nginx + PHP-FPM as non-root
+app=drupal-multisite:app-ci web=drupal-multisite:web-ci 
+app uid: 82  web uid: 101
+
+=== Install both sites from the committed configuration
+ [success] Installation complete. (Admin)
+ [success] Installation complete. (Admin)
+
+=== Each site uses its own database and its own database user
+site_a -> site_a,site_a_user
+site_b -> site_b,site_b_user
+A config change on site_a is not visible on site_b
+site_a_user is denied access to site_b's database
+
+=== HTTP routing through the Service (nginx -> PHP-FPM)
+site-a.example.org -> 200 "Welcome! | Demo site_a"
+site-b.example.org -> 200 "Welcome! | Demo site_b"
+unknown.example.net/ -> 404
+unknown.example.net/core/install.php -> 404
+/healthz -> 200
+
+=== Public files volume is writable by PHP-FPM and served by nginx
+site-a.example.org /sites/site_a/files/css/css_919d7K_kptUOJ8-ElbFwqBLJ5ydrXPGjw5V-kl7LJf4.css -> 200
+site-b.example.org /sites/site_b/files/css/css_3pass3_ceaVkQZ5ezTl6ZyGTRhHP_DK_-kTLyzk8YUM.css -> 200
+
+=== Private files directory is writable and outside the web root
+site_a private:// -> /mnt/private/site_a writable
+site_b private:// -> /mnt/private/site_b writable
+
+=== Per-site CronJobs run
+job.batch/cron-now-site-a created
+job.batch/cron-now-site-a condition met
+site_a system.cron_last=1795218591
+job.batch/cron-now-site-b created
+job.batch/cron-now-site-b condition met
+site_b system.cron_last=1795218594
+
+=== helm upgrade runs drush deploy once per site, in order
+Release "drupal" has been upgraded. Happy Helming!
+NAME: drupal
+LAST DEPLOYED: Fri Nov 20 18:49:57 2026
+NAMESPACE: drupal-smoke
+STATUS: deployed
+REVISION: 2
+DESCRIPTION: Upgrade complete
+TEST SUITE: None
+JOB                    COMPLETE   START                  END
+drupal-deploy-site-a   1          2026-11-20T23:49:57Z   2026-11-20T23:50:02Z
+drupal-deploy-site-b   1          2026-11-20T23:50:02Z   2026-11-20T23:50:07Z
+>  [success] Warmed caches.
+>  [success] Warmed caches.
+site_a finished 2026-11-20T23:50:02Z, site_b started 2026-11-20T23:50:02Z
+
+=== Probes
+drupal-9cb744d64-zd2k5 app:ready=true,restarts=0 web:ready=true,restarts=0
+
+SMOKE TEST PASSED

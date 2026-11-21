@@ -4,42 +4,54 @@ metadata:
   name: {{ .Release.Name }}
   labels: {app: {{ .Release.Name }}}
 spec:
-  # No replicas here: the HPA owns scaling.
+  # No replicas: the HPA owns scaling.
+  strategy: {rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
   selector:
     matchLabels: {app: {{ .Release.Name }}}
   template:
     metadata:
       labels: {app: {{ .Release.Name }}}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
-      securityContext:
-        fsGroup: 33   # www-data in the php:apache image, so Drupal can write public files
+      {{- include "drupal.podSecurity" . | nindent 6 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app: {{ .Release.Name }}}}
       containers:
-        - name: drupal
-          image: {{ include "drupal.image" . | quote }}
-          ports: [{containerPort: 80}]
-          env:
-            {{- include "drupal.env" . | nindent 12 }}
-          readinessProbe:
-            httpGet:
-              path: /user/login
-              port: 80
-              httpHeaders: [{name: Host, value: {{ (index .Values.sites 0).host | quote }}}]
-            initialDelaySeconds: 10
-            periodSeconds: 15
-          livenessProbe:
-            tcpSocket: {port: 80}
-            initialDelaySeconds: 30
-            periodSeconds: 20
-          resources:
-            requests: {cpu: 250m, memory: 512Mi}
-            limits: {memory: 1Gi}
+        - name: app
+          image: {{ include "drupal.image" (list . "app") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            {{- include "drupal.envFrom" . | nindent 12 }}
+          ports: [{name: fastcgi, containerPort: 9000}]
+          {{- include "drupal.containerSecurity" . | nindent 10 }}
+          resources: {{- toYaml .Values.resources.app | nindent 12 }}
+          readinessProbe: {tcpSocket: {port: 9000}, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: 9000}, initialDelaySeconds: 20, periodSeconds: 20}
+          volumeMounts:
+            {{- include "drupal.fileMounts" (list . "") | nindent 12 }}
+        - name: web
+          image: {{ include "drupal.image" (list . "web") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 8080}]
+          securityContext:
+            runAsUser: 101   # nginx-unprivileged
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.resources.web | nindent 12 }}
+          startupProbe: {httpGet: {path: /healthz, port: 8080}, failureThreshold: 30, periodSeconds: 2}
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}, periodSeconds: 10}
           volumeMounts:
             {{- range .Values.sites }}
-            - name: public-files
+            - name: files
               mountPath: /var/www/html/web/sites/{{ .id }}/files
-              subPath: {{ .id }}
+              subPath: public/{{ .id }}
+              readOnly: true
             {{- end }}
       volumes:
-        - name: public-files
+        - name: files
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.existingClaim }}

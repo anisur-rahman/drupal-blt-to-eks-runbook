@@ -6,6 +6,7 @@ web/*
 !web/sites/
 web/sites/*
 !web/sites/sites.php
+!web/sites/settings.shared.php
 !web/sites/default/
 !web/sites/site_a/
 !web/sites/site_b/
@@ -19,3 +20,4 @@ local-files/
 *.sql
 *.sql.gz
 .DS_Store
+._*

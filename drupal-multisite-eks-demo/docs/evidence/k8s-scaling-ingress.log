@@ -1,0 +1,39 @@
+
+=== Cluster add-ons: metrics-server and Traefik
+NAME                CONTROLLER                      PARAMETERS   AGE
+traefik (default)   traefik.io/ingress-controller   <none>       37m
+
+=== Enable the chart's Ingress
+NAME     CLASS     HOSTS
+drupal   traefik   site-a.example.org,site-b.example.org
+
+=== Routing through the Ingress controller
+site-a.example.org via Ingress -> 200 "Welcome! | Demo site_a"
+site-b.example.org via Ingress -> 200 "Welcome! | Demo site_b"
+unknown.example.net via Ingress -> 404 (no rule)
+
+=== HPA has CPU metrics
+NAME     REFERENCE           TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+drupal   Deployment/drupal   cpu: 3%/50%   1         3         1          63s
+
+=== Scale out under load (uncached pages: a unique query string per request)
+t=10s replicas=1 cpu=3%
+t=20s replicas=1 cpu=3%
+t=30s replicas=1 cpu=0%
+t=40s replicas=1 cpu=6%
+t=50s replicas=1 cpu=6%
+t=60s replicas=3 cpu=586%
+NAME                     READY   STATUS    RESTARTS   AGE
+drupal-9cb744d64-jvznt   2/2     Running   0          8s
+drupal-9cb744d64-vnm86   2/2     Running   0          8s
+drupal-9cb744d64-zd2k5   2/2     Running   0          114s
+  Warning  FailedGetResourceMetric       99s (x2 over 114s)  horizontal-pod-autoscaler  failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Warning  FailedComputeMetricsReplicas  99s (x2 over 114s)  horizontal-pod-autoscaler  invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  Warning  FailedGetResourceMetric       69s (x3 over 84s)   horizontal-pod-autoscaler  failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+  Warning  FailedComputeMetricsReplicas  69s (x3 over 84s)   horizontal-pod-autoscaler  invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+  Normal   SuccessfulRescale             8s                  horizontal-pod-autoscaler  New size: 3; reason: cpu resource utilization (percentage of request) above target
+
+=== Scale-in is left to the HPA (5-minute stabilisation window); stop the load
+Load stopped. The HPA will return to minReplicas after its scale-down window.
+
+INGRESS AND AUTOSCALING TEST PASSED

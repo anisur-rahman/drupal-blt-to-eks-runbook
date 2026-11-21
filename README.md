@@ -27,33 +27,37 @@ A 20-phase approach to modernizing a Drupal multisite platform: removing the Acq
 │   └── demo-validate.yml                  CI: static checks, Compose and Kubernetes smoke tests
 └── drupal-multisite-eks-demo/             Working demo: two Drupal 11 sites, one codebase
     ├── README.md                          How to run the demo
-    ├── Dockerfile                         PHP 8.3 + Apache image with Drupal 11 and Drush 13
-    ├── compose.yaml                       Local stack: Drupal + MariaDB
-    ├── composer.json                      Drupal dependencies, no Acquia BLT
+    ├── Dockerfile                         Two targets: app (PHP-FPM 8.3, Drupal 11, Drush 13) and web (nginx)
+    ├── compose.yaml                       Local stack: app + web (sharing a network, like a pod) + MariaDB
+    ├── composer.json, composer.lock       Drupal dependencies, no Acquia BLT
+    ├── docker/php, docker/nginx           PHP, PHP-FPM and nginx configuration
     ├── .env.example                       Local database passwords (copy to .env)
     ├── web/sites/
     │   ├── sites.php                      Hostname → site directory map
+    │   ├── settings.shared.php            Environment-driven settings shared by all sites
     │   ├── default/settings.php           Returns 404 for unknown hostnames
-    │   ├── site_a/settings.php            Environment-driven settings, one per site
+    │   ├── site_a/settings.php            Sets the site name, includes settings.shared.php
     │   └── site_b/settings.php
-    ├── config/site_{a,b}/sync/            Config sync directories, outside public files
+    ├── config/site_{a,b}/sync/            Each site's exported configuration, outside public files
     ├── docker/db-init/01-sites.sh         Creates the second site's database locally
     ├── helm/drupal/                       Helm chart
     │   ├── values.yaml                    Image, database, site list, Ingress settings
-    │   └── templates/                     Deployment, Service, HPA, per-site CronJobs, Ingress
+    │   └── templates/                     Deployment (nginx + PHP-FPM), Service, HPA, PDB, ConfigMap,
+    │                                      per-site CronJobs and deploy Jobs, Ingress, ExternalSecret
     ├── migration/
     │   └── site-databases.example.csv     Site → Acquia database → target database mapping
     ├── scripts/
     │   ├── validate-site-databases.sh     Checks the mapping before backups (runbook Phase 3)
-    │   ├── install-local.sh               Installs both sites locally
+    │   ├── bootstrap-config.sh            One-time: creates and exports each site's configuration
+    │   ├── install-local.sh               Installs both sites locally from that configuration
     │   └── deploy-sites.sh                Runs drush deploy per site, in order
     ├── tests/
     │   ├── compose/smoke.sh               Docker Compose end-to-end test
-    │   ├── k8s/                           Kubernetes (kind) end-to-end test + test database
+    │   ├── k8s/                           Kubernetes (kind) end-to-end, Ingress and autoscaling tests
     │   └── site-databases/                Validator tests and bad-input fixtures
     └── docs/
         ├── EVIDENCE.md                    What was run, where, and the results
-        ├── evidence/                      Screenshots and smoke test log
+        ├── evidence/                      Screenshots and smoke test logs
         ├── ARCHITECTURE.md                Architecture decisions
         ├── DISCOVERY.md                   Discovery checklist (runbook Phases 1–4)
         └── CUTOVER.md                     Cutover checklist (runbook Phases 17–20)
@@ -63,12 +67,13 @@ A 20-phase approach to modernizing a Drupal multisite platform: removing the Acq
 
 All of this runs in the [CI workflow](.github/workflows/demo-validate.yml). Results and screenshots are in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md).
 
-- **Image build:** Drupal 11 and Drush 13 on PHP 8.3, with no BLT.
-- **Multisite on Docker Compose:** both sites install; each hostname serves its own site from its own database, and config doesn't leak between them. Unknown hostnames get 404, not the Drupal installer. Cron runs.
-- **Helm chart on Kubernetes (kind):** the chart installs; both sites install and serve through the Service; the files volume is writable; each site's CronJob runs. The rendered manifests pass `kubeconform` schema validation.
+- **Images (Phase 9):** one Dockerfile builds `app` (PHP-FPM 8.3, Drupal 11, Drush 13, no BLT) and `web` (unprivileged nginx). Both run as non-root.
+- **Multisite on Docker Compose (Phase 10):** both sites install from committed configuration. Each hostname serves its own site from its own database, and config and content don't leak between sites. Unknown hostnames get 404, not the Drupal installer. nginx blocks dotfiles, YAML, PHP sources and private paths. Cron and `drush deploy` run.
+- **Helm chart on Kubernetes (kind, Phases 14–15):** nginx + PHP-FPM pods serve both sites through the Service. Each site has its own database user, and one site's user can't read another site's database. Public and private files are writable. Each site's CronJob runs, and `helm upgrade` runs `drush deploy` once per site, in order. The rendered manifests pass `kubeconform` schema validation.
+- **Ingress and autoscaling (kind):** the chart's Ingress routes both hostnames (Traefik stands in for the ALB), and the HPA scales out under load with metrics-server.
 - **Migration inventory:** the `site-databases.csv` validator passes on valid input and rejects 9 kinds of bad input.
 
-Building and running the demo turned up ten defects that static checks had missed. One example: every page was a PHP fatal error returned with HTTP 200. All ten are listed in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md#defects-found-by-running-the-demo).
+Building and running the demo turned up 18 defects that static checks had missed. Three were in the runbook's own Phase 8–9 templates; for example, PHP-FPM's default `clear_env` would have hidden every environment variable from the settings. All 18 are listed in [`EVIDENCE.md`](drupal-multisite-eks-demo/docs/EVIDENCE.md#defects-found-by-running-the-demo).
 
 ## The runbook's phases
 

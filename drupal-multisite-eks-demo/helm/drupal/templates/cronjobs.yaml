@@ -13,25 +13,26 @@ spec:
     spec:
       backoffLimit: 0
       template:
+        metadata:
+          labels: {job: cron, site: {{ .id | replace "_" "-" }}}
         spec:
           restartPolicy: Never
-          securityContext:
-            fsGroup: 33
+          {{- include "drupal.podSecurity" $ | nindent 10 }}
           containers:
             - name: cron
-              image: {{ include "drupal.image" $ | quote }}
-              command: ["vendor/bin/drush", "--uri=https://{{ .host }}", "cron"]
-              env:
-                {{- include "drupal.env" $ | nindent 16 }}
+              image: {{ include "drupal.image" (list $ "app") | quote }}
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              command: ["drush", "--uri=https://{{ .host }}", "cron"]
+              envFrom:
+                {{- include "drupal.envFrom" $ | nindent 16 }}
+              {{- include "drupal.containerSecurity" $ | nindent 14 }}
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {memory: 512Mi}
               volumeMounts:
-                - name: public-files
-                  mountPath: /var/www/html/web/sites/{{ .id }}/files
-                  subPath: {{ .id }}
+                {{- include "drupal.fileMounts" (list $ .id) | nindent 16 }}
           volumes:
-            - name: public-files
+            - name: files
               persistentVolumeClaim:
                 claimName: {{ $.Values.persistence.existingClaim }}
 {{- end }}

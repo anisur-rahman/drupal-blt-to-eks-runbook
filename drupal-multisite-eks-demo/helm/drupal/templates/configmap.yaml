@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  APP_ENV: {{ .Values.appEnv | quote }}
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  TRUSTED_PROXY_IPS: {{ .Values.trustedProxyIps | quote }}
+  {{- range .Values.sites }}
+  {{ .id | upper }}_DB_NAME: {{ .dbName | quote }}
+  {{ .id | upper }}_TRUSTED_HOSTS: {{ printf "^%s$" (.host | replace "." "\\.") | quote }}
+  {{- end }}

@@ -1,31 +1,75 @@
+# Runbook Phase 15. One release serves every site; Drupal's sites.php routes by hostname.
 image:
   repository: example.invalid/drupal-multisite
   # Deploy by immutable digest. `tag` is only for local test clusters (kind).
-  digest: sha256:REPLACE_WITH_VERIFIED_DIGEST
-  tag: ""
+  app: {digest: "sha256:REPLACE_WITH_VERIFIED_APP_DIGEST", tag: ""}
+  web: {digest: "sha256:REPLACE_WITH_VERIFIED_WEB_DIGEST", tag: ""}
+  pullPolicy: IfNotPresent
+
+appEnv: prod
+
 autoscaling:
-  minReplicas: 2
-  maxReplicas: 5
-  cpuUtilization: 70
+  minReplicas: 3
+  maxReplicas: 12
+  cpuUtilization: 65
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+resources:
+  app: {requests: {cpu: 250m, memory: 512Mi}, limits: {memory: 1Gi}}
+  web: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 256Mi}}
+
 service:
   port: 80
+
 persistence:
-  # Must be ReadWriteMany (EFS) when pods run on more than one node.
-  existingClaim: drupal-public-files
+  # ReadWriteMany (EFS) when pods run on more than one node. Layout inside the volume:
+  # public/<site>, private/<site>.
+  existingClaim: drupal-files
+
 database:
   host: REPLACE_RDS_ENDPOINT
-  user: drupal
-  existingSecret: drupal-db
+  port: "3306"
+
+# Secret (created by External Secrets on EKS, or by hand for tests) holding, per site:
+#   <SITE>_DB_USER, <SITE>_DB_PASSWORD, <SITE>_HASH_SALT   e.g. SITE_A_DB_PASSWORD
+existingSecret: drupal-env
+
+# Render the runbook's ExternalSecret (needs External Secrets Operator + its CRDs).
+externalSecrets:
+  enabled: false
+  apiVersion: external-secrets.io/v1
+  storeName: aws-sm
+  storeKind: ClusterSecretStore
+  refreshInterval: 1h
+  keyPrefix: drupal/prod   # Secrets Manager keys: <keyPrefix>/<site id>
+
+# Addresses that connect to Drupal and may set X-Forwarded-*: the ALB subnet CIDRs,
+# verified with the three Phase 8 proxy tests. Empty = no proxy trusted.
+trustedProxyIps: ""
+
 cron:
   schedule: "*/15 * * * *"
+
+# `drush deploy` per site, in site order, as Helm post-upgrade hooks (one Job per site,
+# each waits for the previous). Not run on first install: sites are installed first.
+deployJobs:
+  enabled: true
+  timeoutSeconds: 900
+
 ingress:
   enabled: false
   className: alb
   annotations: {}
     # alb.ingress.kubernetes.io/scheme: internet-facing
     # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    # alb.ingress.kubernetes.io/ssl-redirect: "443"
     # alb.ingress.kubernetes.io/certificate-arn: REPLACE_CERT_ARN
-# Keep in sync with web/sites/sites.php.
+    # alb.ingress.kubernetes.io/healthcheck-path: /healthz
+
+# Keep in sync with web/sites/sites.php and migration/site-databases.csv.
 sites:
   - id: site_a
     host: site-a.example.org

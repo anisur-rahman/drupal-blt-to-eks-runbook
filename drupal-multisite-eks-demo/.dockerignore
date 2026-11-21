@@ -1,6 +1,17 @@
 .git
 .env
+.env.*
 vendor
 local-files
+web/sites/*/files
+backups
+migration
+docs
+tests
+helm
 *.sql
 *.sql.gz
+._*
+**/._*
+.DS_Store
+**/.DS_Store
