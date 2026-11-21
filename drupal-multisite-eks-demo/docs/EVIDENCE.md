@@ -32,7 +32,7 @@ What has actually been run, where, and what it showed. Anything not listed as ru
 | Per-site `drush deploy` Jobs | Local (kind) | kind smoke test, `helm upgrade` | Pass: `drupal-deploy-site-a` 23:49:57–23:50:02, then `drupal-deploy-site-b` 23:50:02–23:50:07 |
 | Ingress | Local (kind) | [`tests/k8s/scaling-ingress.sh`](../tests/k8s/scaling-ingress.sh) | Pass: both host names → 200 through Traefik using the chart's Ingress rules; unknown host → 404 |
 | Autoscaling | Local (kind) | Ingress and autoscaling test | Pass: under load on uncached pages, CPU went to 586% of requests and the HPA scaled from 1 to 3 replicas |
-| CI with the new design | CI | Workflow on the `local-production-design` branch | See [CI runs](#ci-runs) |
+| CI with the new design | CI | Workflow on the `local-production-design` branch | Pass: all three jobs, [run 44842516404](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/runs/44842516404) (2026-11-21); the HPA scaled 1 → 3 on the runner too |
 | EKS deployment | AWS | — | **Not run** |
 | Load test with real targets | — | — | **Not run** (the autoscaling test proves the HPA works, not capacity) |
 | Backup and restore from Acquia | — | — | **Not run** |
@@ -46,6 +46,7 @@ Logs: [`compose-smoke.log`](evidence/compose-smoke.log), [`k8s-smoke.log`](evide
 
 Every push that changes this folder runs [the workflow](../../.github/workflows/demo-validate.yml); see the [list of runs](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/workflows/demo-validate.yml). Each run keeps the smoke test logs as downloadable artifacts (`compose-smoke-log`, `k8s-smoke-log`).
 
+- First fully passing run with the nginx + PHP-FPM design (static checks, Compose smoke test, kind smoke test with Ingress and autoscaling): [run 44842516404](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/runs/44842516404).
 - First fully passing run with the earlier single Apache image: [run 44817880453](https://github.com/anisur-rahman/drupal-blt-to-eks-runbook/actions/runs/44817880453).
 
 ## Known warnings
